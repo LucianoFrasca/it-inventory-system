@@ -2,43 +2,43 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const path = require('path');
+
+// Configuración de variables de entorno
 require('dotenv').config({ 
   path: path.resolve(__dirname, '.env'),
   override: true 
 });
 
-// 1. PRIMERO creamos la app
+// Importar Rutas
+const assetTypesRouter = require('./routes/assetTypes');
+const usersRouter = require('./routes/users');
+const assetsRouter = require('./routes/assets'); // <--- ¡Esta faltaba!
+
 const app = express();
 
-// 2. SEGUNDO configuramos los middlewares
+// Middlewares
 app.use(cors());
 app.use(express.json());
-const assetTypesRouter = require('./routes/assetTypes');
-app.use('/api/asset-types', assetTypesRouter);
-
-
 
 // Verificación de conexión (Diagnóstico)
-console.log("--- Diagnóstico de Inicio ---");
-console.log("¿URI detectada?:", process.env.MONGO_URI ? "SÍ ✅" : "NO ❌");
-console.log("-----------------------------");
+console.log("--- Diagnóstico ---");
+console.log("Mongo URI Detectada:", process.env.MONGO_URI ? "SÍ ✅" : "NO ❌");
 
-// 3. TERCERO conectamos a la base de datos
-const mongoURI = "mongodb+srv://admin:EjyG1FaDeYpHzJ5b@inventorysoftcluster.j0ssayh.mongodb.net/?"
-
-mongoose.connect(mongoURI)
+// Conexión a MongoDB
+mongoose.connect("mongodb+srv://admin:EjyG1FaDeYpHzJ5b@inventorysoftcluster.j0ssayh.mongodb.net/?appName=InventorySoftCluster")
     .then(() => console.log('✅ Conectado exitosamente a MongoDB Atlas'))
-    .catch((err) => {
-        console.error('❌ Error de conexión a MongoDB:');
-        console.error(err);
-    });
+    .catch((err) => console.error('❌ Error de conexión:', err));
+// Usar Rutas (Endpoints)
+app.use('/api/asset-types', assetTypesRouter);
+app.use('/api/users', usersRouter);
+app.use('/api/assets', assetsRouter); // <--- Middleware agregado
 
-// Ruta de prueba
-app.get('/api/status', (req, res) => {
-    res.json({ mensaje: "El servidor de InventorySoft está en línea 🚀" });
+// Ruta base de prueba
+app.get('/', (req, res) => {
+    res.send('API InventorySoft funcionando 🚀');
 });
 
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-    console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
+    console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
 });
