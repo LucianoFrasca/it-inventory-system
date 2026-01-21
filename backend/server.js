@@ -1,17 +1,30 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-require('dotenv').config({ path: './.env' });
-console.log("Mi URI es:", process.env.MONGO_URI);
+const path = require('path');
+require('dotenv').config({ 
+  path: path.resolve(__dirname, '.env'),
+  override: true 
+});
 
+// 1. PRIMERO creamos la app
 const app = express();
 
-// Middlewares
+// 2. SEGUNDO configuramos los middlewares
 app.use(cors());
 app.use(express.json());
+const assetTypesRouter = require('./routes/assetTypes');
+app.use('/api/asset-types', assetTypesRouter);
 
-// Conexión a MongoDB usando la variable de entorno
-const mongoURI = process.env.MONGO_URI;
+
+
+// Verificación de conexión (Diagnóstico)
+console.log("--- Diagnóstico de Inicio ---");
+console.log("¿URI detectada?:", process.env.MONGO_URI ? "SÍ ✅" : "NO ❌");
+console.log("-----------------------------");
+
+// 3. TERCERO conectamos a la base de datos
+const mongoURI = "mongodb+srv://admin:EjyG1FaDeYpHzJ5b@inventorysoftcluster.j0ssayh.mongodb.net/?"
 
 mongoose.connect(mongoURI)
     .then(() => console.log('✅ Conectado exitosamente a MongoDB Atlas'))
@@ -20,7 +33,7 @@ mongoose.connect(mongoURI)
         console.error(err);
     });
 
-// Ruta de prueba para saber si el backend responde
+// Ruta de prueba
 app.get('/api/status', (req, res) => {
     res.json({ mensaje: "El servidor de InventorySoft está en línea 🚀" });
 });
