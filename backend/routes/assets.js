@@ -1,6 +1,54 @@
 const express = require('express');
 const router = express.Router();
 const Asset = require('../models/Asset');
+const User = require('../models/User'); // Necesitamos buscar usuarios
+
+router.post('/bulk-import', async (req, res) => {
+    const { tipoId, activos } = req.body;
+    let creados = 0;
+    let errores = 0;
+    let detalles = [];
+
+    for (const [index, data] of activos.entries()) {
+        try {
+            // 1. Lógica de Usuario: Buscar por Email si viene en el Excel
+            let usuarioId = null;
+            if (data.emailUsuario) {
+                const emailLimpio = String(data.emailUsuario).trim().toLowerCase();
+                const usuarioEncontrado = await User.findOne({ email: emailLimpio });
+                if (usuarioEncontrado) {
+                    usuarioId = usuarioEncontrado._id;
+                } else {
+                    detalles.push(`Fila ${index + 1}: Usuario ${emailLimpio} no encontrado. Se cargó como 'Sin Asignar'.`);
+                }
+            }
+
+            // 2. Separar datos fijos de detalles técnicos dinámicos
+            const { marca, modelo, serialNumber, estado, emailUsuario, ...camposExtra } = data;
+
+            const nuevoActivo = new Asset({
+                tipo: tipoId,
+                marca: marca || 'Genérica',
+                modelo: modelo || 'Desconocido',
+                serialNumber: String(serialNumber).trim(),
+                estado: usuarioId ? 'Asignado' : (estado || 'Disponible'),
+                usuarioAsignado: usuarioId,
+                detallesTecnicos: camposExtra // Todo lo que no es fijo va al Map
+            });
+
+            await nuevoActivo.save();
+            creados++;
+        } catch (error) {
+            errores++;
+            detalles.push(`Error en fila ${index + 1}: ${error.message}`);
+        }
+    }
+
+    res.json({
+        message: `Importación finalizada. ✅ ${creados} creados. ❌ ${errores} errores.`,
+        detalles
+    });
+});
 
 // 1. OBTENER TODOS (Con datos de Tipo y Usuario populados)
 router.get('/', async (req, res) => {

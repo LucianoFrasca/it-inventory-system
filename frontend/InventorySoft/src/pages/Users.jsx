@@ -7,21 +7,23 @@ const Users = () => {
   // --- ESTADOS DE DATOS ---
   const [usuarios, setUsuarios] = useState([]);
   
-  // --- ESTADOS DE UI (Formulario y Selección) ---
+  // --- ESTADOS DE UI ---
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
   const [modoEdicion, setModoEdicion] = useState(false);
   const [idEdicion, setIdEdicion] = useState(null);
+  
+  // Selección
   const [seleccionados, setSeleccionados] = useState([]);
   const [ultimoSeleccionado, setUltimoSeleccionado] = useState(null);
 
-  // --- ESTADOS DE IMPORTACIÓN ---
+  // Importación
   const [modoImportar, setModoImportar] = useState(false);
   const [archivoData, setArchivoData] = useState([]);
   const [headersExcel, setHeadersExcel] = useState([]);
   const [mapeo, setMapeo] = useState({});
   const [procesando, setProcesando] = useState(false);
 
-  // --- ESTADO DEL FORMULARIO ---
+  // Formulario
   const [nuevoUsuario, setNuevoUsuario] = useState({
     nombre: '', apellido: '', email: '', rol: 'Estandar', cargo: '', area: '', departamento: ''
   });
@@ -33,7 +35,15 @@ const Users = () => {
     { key: 'cargo', label: 'Cargo' }
   ];
 
-  useEffect(() => { cargarUsuarios(); }, []);
+  // 1. CARGA INICIAL Y LIMPIEZA
+  useEffect(() => {
+    cargarUsuarios();
+    
+    // Función de limpieza: Se asegura de que si sales de la página, el formulario se cierre
+    return () => {
+        resetFormulario();
+    };
+  }, []);
 
   const cargarUsuarios = async () => {
     try {
@@ -42,7 +52,7 @@ const Users = () => {
     } catch (error) { console.error(error); }
   };
 
-  // --- 1. LÓGICA DE SELECCIÓN (Igual que Activos) ---
+  // --- 2. LÓGICA DE SELECCIÓN ---
   const handleSelectOne = (id, index, e) => {
     let nuevos = [...seleccionados];
     if (e.shiftKey && ultimoSeleccionado !== null) {
@@ -52,7 +62,7 @@ const Users = () => {
       const combinados = new Set([...nuevos, ...idsRango]);
       setSeleccionados(Array.from(combinados));
     } else {
-      if (nuevos.includes(id)) novos = nuevos.filter(item => item !== id);
+      if (nuevos.includes(id)) nuevos = nuevos.filter(item => item !== id);
       else nuevos.push(id);
       setSeleccionados(nuevos);
       setUltimoSeleccionado(index);
@@ -74,16 +84,26 @@ const Users = () => {
     } catch (e) { alert(e.message); }
   };
 
-  // --- 2. LÓGICA DE FORMULARIO (Crear / Editar) ---
+  // --- 3. LÓGICA DE FORMULARIO ---
   const prepararEdicion = (usuario) => {
+    // Reseteamos primero para evitar conflictos
     setModoEdicion(true);
     setIdEdicion(usuario._id);
     setNuevoUsuario({
-      nombre: usuario.nombre, apellido: usuario.apellido, email: usuario.email,
-      rol: usuario.rol, cargo: usuario.cargo || '', area: usuario.area || '',
+      nombre: usuario.nombre || '', 
+      apellido: usuario.apellido || '', 
+      email: usuario.email || '',
+      rol: usuario.rol || 'Estandar', 
+      cargo: usuario.cargo || '', 
+      area: usuario.area || '',
       departamento: usuario.departamento || ''
     });
     setMostrarFormulario(true);
+  };
+
+  const prepararCreacion = () => {
+      resetFormulario(); // Limpia cualquier edición vieja
+      setMostrarFormulario(true);
   };
 
   const resetFormulario = () => {
@@ -98,13 +118,14 @@ const Users = () => {
     try {
       if (modoEdicion) {
         await axios.put(`http://localhost:5000/api/users/${idEdicion}`, nuevoUsuario);
-        alert('Usuario actualizado');
+        alert('Usuario actualizado correctamente');
       } else {
         const res = await axios.post('http://localhost:5000/api/users', nuevoUsuario);
         if (res.data.tempPassword) {
-            alert(`Usuario creado.\n⚠️ El email falló. Contraseña temporal: ${res.data.tempPassword}`);
+            // Solo mostramos pass si el backend la devolvió (significa que el email falló o es admin)
+            alert(`Usuario Admin creado.\n⚠️ Email falló. Pass temporal: ${res.data.tempPassword}`);
         } else {
-            alert('Usuario creado y notificación enviada por email.');
+            alert(res.data.message);
         }
       }
       cargarUsuarios();
@@ -112,7 +133,7 @@ const Users = () => {
     } catch (error) { alert('Error: ' + (error.response?.data?.message || error.message)); }
   };
 
-  // --- 3. LÓGICA DE IMPORTACIÓN (Resumida) ---
+  // --- 4. IMPORTACIÓN ---
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -133,7 +154,13 @@ const Users = () => {
     });
     try {
         const res = await axios.post('http://localhost:5000/api/users/bulk-import', data);
-        alert(res.data.message);
+        
+        if (res.data.detalles && res.data.detalles.length > 0) {
+            alert(`${res.data.message}\n\n--- DETALLES ---\n${res.data.detalles.join('\n')}`);
+        } else {
+            alert(res.data.message);
+        }
+        
         setModoImportar(false); cargarUsuarios();
     } catch(e) { alert(e.message); } finally { setProcesando(false); }
   };
@@ -153,7 +180,7 @@ const Users = () => {
                         <Upload size={20}/> Importar
                         </button>
                     </div>
-                    <button onClick={() => setMostrarFormulario(true)} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded flex items-center gap-2 font-medium">
+                    <button onClick={prepararCreacion} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded flex items-center gap-2 font-medium">
                         <Plus size={20}/> Nuevo Usuario
                     </button>
                 </>
@@ -180,7 +207,7 @@ const Users = () => {
                         value={nuevoUsuario.apellido} onChange={e => setNuevoUsuario({...nuevoUsuario, apellido: e.target.value})} />
                 </div>
                 <div className="md:col-span-2">
-                    <label className="text-slate-400 text-xs block mb-1">Email {!modoEdicion && '(Se enviará contraseña temporal)'}</label>
+                    <label className="text-slate-400 text-xs block mb-1">Email {nuevoUsuario.rol === 'Administrador' && !modoEdicion && '(Se enviarán credenciales)'}</label>
                     <div className="relative">
                         <Mail size={16} className="absolute left-3 top-3 text-slate-500"/>
                         <input type="email" className={`w-full bg-slate-900 border border-slate-600 rounded p-2 pl-9 text-white ${modoEdicion ? 'opacity-50 cursor-not-allowed' : ''}`} required disabled={modoEdicion}
@@ -191,8 +218,8 @@ const Users = () => {
                     <label className="text-slate-400 text-xs block mb-1">Rol</label>
                     <select className="w-full bg-slate-900 border border-slate-600 rounded p-2 text-white"
                         value={nuevoUsuario.rol} onChange={e => setNuevoUsuario({...nuevoUsuario, rol: e.target.value})}>
-                        <option value="Estandar">Estandar</option>
-                        <option value="Administrador">Administrador</option>
+                        <option value="Estandar">Estandar (Sin Login)</option>
+                        <option value="Administrador">Administrador (Acceso Total)</option>
                     </select>
                 </div>
                 <div>
@@ -214,21 +241,20 @@ const Users = () => {
                 <div className="md:col-span-2 flex gap-3 pt-4">
                     <button type="button" onClick={resetFormulario} className="px-4 py-2 text-slate-400 hover:text-white">Cancelar</button>
                     <button type="submit" className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 rounded flex justify-center gap-2">
-                        <Save size={18}/> Guardar Usuario
+                        <Save size={18}/> {modoEdicion ? 'Guardar Cambios' : 'Crear Usuario'}
                     </button>
                 </div>
             </form>
         </div>
       )}
 
-      {/* --- IMPORTADOR (Se muestra si modoImportar es true) --- */}
+      {/* --- IMPORTADOR --- */}
       {modoImportar && (
         <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 mb-8">
             <div className="flex justify-between mb-4">
                 <h3 className="text-white font-bold">Mapeo de Importación</h3>
                 <button onClick={() => setModoImportar(false)} className="text-slate-400"><X/></button>
             </div>
-            {/* Tabla de Mapeo Resumida */}
             <div className="overflow-x-auto pb-4">
                 <table className="w-full text-left">
                     <thead>
@@ -267,7 +293,7 @@ const Users = () => {
         </div>
       )}
 
-      {/* --- TABLA PRINCIPAL --- */}
+      {/* --- TABLA --- */}
       <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden shadow-xl">
         <table className="w-full text-left">
           <thead className="bg-slate-900 text-slate-400 uppercase text-xs">
