@@ -4,14 +4,21 @@ const UserSchema = new mongoose.Schema({
     nombre: { type: String, required: true },
     apellido: { type: String, required: true },
     email: { type: String, required: true, unique: true },
-    tipo: { 
-        type: String, 
-        enum: ['Administrador', 'Estandar'], 
-        default: 'Estandar' 
+    password: { type: String, required: true },
+    rol: {
+        type: String,
+        enum: ['Administrador', 'Estandar'],
+        default: 'Estandar'
     },
-    // Solo los admin usarán password para entrar al sistema
-    password: { type: String }, 
-    activosAsignados: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Asset' }],
+    // 👇 CAMPOS DE INFORMACIÓN EXTRA 👇
+    cargo: { type: String, default: '' },       
+    departamento: { type: String, default: '' }, 
+    area: { type: String, default: '' }, // <--- NUEVO CAMPO AREA
+    // ---------------------------------
+    activosAsignados: [{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Asset'
+    }],
     fechaCreacion: { type: Date, default: Date.now }
 });
 

@@ -22,14 +22,17 @@
   "homepage": "https://github.com/LucianoFrasca/it-inventory-system#readme",
   "dependencies": {
     "axios": "^1.13.2",
+    "bcryptjs": "^3.0.3",
     "cors": "^2.8.5",
     "csv-parser": "^3.2.0",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
     "lucide-react": "^0.562.0",
     "mongodb": "^7.0.0",
     "mongoose": "^9.1.5",
     "multer": "^2.0.2",
+    "nodemailer": "^7.0.12",
     "react-router-dom": "^7.12.0",
     "recharts": "^3.6.0"
   },

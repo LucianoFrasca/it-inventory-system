@@ -13,6 +13,7 @@ require('dotenv').config({
 const assetTypesRouter = require('./routes/assetTypes');
 const usersRouter = require('./routes/users');
 const assetsRouter = require('./routes/assets'); // <--- ¡Esta faltaba!
+const authRouter = require('./routes/auth');
 
 const app = express();
 
@@ -32,6 +33,9 @@ mongoose.connect("mongodb+srv://admin:EjyG1FaDeYpHzJ5b@inventorysoftcluster.j0ss
 app.use('/api/asset-types', assetTypesRouter);
 app.use('/api/users', usersRouter);
 app.use('/api/assets', assetsRouter); // <--- Middleware agregado
+app.use('/api/auth', authRouter);
+
+app.use('/api/users', require('./routes/users'));
 
 // Ruta base de prueba
 app.get('/', (req, res) => {
