@@ -4,6 +4,7 @@ import Settings from './pages/Settings';
 import Assets from './pages/Assets';
 import Login from './pages/Login';
 import Users from './pages/Users'; // <--- 1. IMPORTANTE: Importar la página nueva
+import UserAssignments from './pages/UserAssignments';
 
 const PrivateRoute = ({ children }) => {
   const token = localStorage.getItem('token');
@@ -64,6 +65,7 @@ function App() {
         } />
 
         {/* CUALQUIER OTRA RUTA -> AL DASHBOARD */}
+        <Route path="/asignaciones" element={<UserAssignments />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

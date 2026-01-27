@@ -5,3 +5,17 @@
 body {
   @apply bg-dark-900 text-slate-200;
 }
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.4s ease-out forwards;
+}
+
+/* Transición suave para todos los elementos interactivos */
+* {
+  transition: background-color 0.2s, border-color 0.2s, transform 0.2s;
+}
