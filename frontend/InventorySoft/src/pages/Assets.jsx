@@ -1,54 +1,60 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import readXlsxFile from 'read-excel-file';
+import * as XLSX from 'xlsx'; 
 import { 
-  Plus, Search, Package, Laptop, Smartphone, Monitor, Grid, X, 
-  Save, Pencil, Trash2, User, CheckSquare, Square, AlertCircle, 
-  Download, Upload, Check, Filter, Eye
+  Plus, Search, Package, Pencil, Trash2, CheckSquare, Square, 
+  Download, Upload, Check, Filter, ArrowLeft, X, Save, User,
+  Laptop, Smartphone, Monitor, Tablet, MousePointer2, HardDrive, Cpu
 } from 'lucide-react';
 
 const Assets = () => {
-  // --- ESTADOS DE DATOS ---
+  const [viewMode, setViewMode] = useState('dashboard'); 
+  const [selectedType, setSelectedType] = useState(null);
   const [activos, setActivos] = useState([]);
   const [tiposActivos, setTiposActivos] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
 
-  // --- ESTADOS DE UI ---
+  // UI & Filters
+  const [busquedaGlobal, setBusquedaGlobal] = useState('');
+  const [activeFilters, setActiveFilters] = useState({}); 
+  const [openFilterColumn, setOpenFilterColumn] = useState(null);
+  const [seleccionados, setSeleccionados] = useState([]);
+  const [ultimoSeleccionado, setUltimoSeleccionado] = useState(null);
   const [mostrarFormulario, setMostrarFormulario] = useState(false);
   const [modoEdicion, setModoEdicion] = useState(false);
   const [idEdicion, setIdEdicion] = useState(null);
-  
-  // --- SELECCIÓN ---
-  const [seleccionados, setSeleccionados] = useState([]);
-  const [ultimoSeleccionado, setUltimoSeleccionado] = useState(null);
 
-  // --- FILTROS POR COLUMNA ---
-  const [filtros, setFiltros] = useState({
-    global: '', marcaModelo: '', serial: '', usuario: '', estado: '', tipo: ''
-  });
-
-  // --- VISIBILIDAD DE COLUMNAS ---
-  const [cols, setCols] = useState({
-    tipo: true, marca: true, serial: true, detalles: true, usuario: true, estado: true
-  });
-  const [showColMenu, setShowColMenu] = useState(false);
-
-  // --- IMPORTACIÓN ---
+  // Import
   const [modoImportar, setModoImportar] = useState(false);
   const [archivoData, setArchivoData] = useState([]);
   const [headersExcel, setHeadersExcel] = useState([]);
   const [mapeo, setMapeo] = useState({});
-  const [tipoParaImportar, setTipoParaImportar] = useState('');
   const [procesando, setProcesando] = useState(false);
 
-  // --- FORMULARIO ---
-  const [nuevoActivo, setNuevoActivo] = useState({ 
-    marca: '', modelo: '', serialNumber: '', estado: 'Disponible', tipo: '', usuarioAsignado: '' 
-  });
+  // Form
+  const [nuevoActivo, setNuevoActivo] = useState({ marca: '', modelo: '', serialNumber: '', estado: 'Disponible', tipo: '', usuarioAsignado: '' });
   const [detallesDinamicos, setDetallesDinamicos] = useState({});
-  const [tipoSeleccionadoObj, setTipoSeleccionadoObj] = useState(null);
+  const [userSearchTerm, setUserSearchTerm] = useState('');
+  const [showUserSuggestions, setShowUserSuggestions] = useState(false);
 
   useEffect(() => { cargarDatos(); }, []);
+
+  // LIMPIEZA DE ESTADO AL CAMBIAR DE VISTA O NAVEGAR
+  useEffect(() => {
+    if (viewMode === 'dashboard') {
+      resetEstadosFormulario();
+    }
+  }, [viewMode]);
+
+  const resetEstadosFormulario = () => {
+    setMostrarFormulario(false);
+    setModoEdicion(false);
+    setIdEdicion(null);
+    setNuevoActivo({ marca: '', modelo: '', serialNumber: '', estado: 'Disponible', tipo: selectedType?._id || '', usuarioAsignado: '' });
+    setDetallesDinamicos({});
+    setUserSearchTerm('');
+  };
 
   const cargarDatos = async () => {
     try {
@@ -63,92 +69,51 @@ const Assets = () => {
     } catch (e) { console.error(e); }
   };
 
-  // --- LÓGICA DE FILTRADO (Excel Style) ---
-  const activosFiltrados = activos.filter(a => {
-    const nombreCompleto = a.usuarioAsignado ? `${a.usuarioAsignado.nombre} ${a.usuarioAsignado.apellido}`.toLowerCase() : '';
-    const marcaMod = `${a.marca} ${a.modelo}`.toLowerCase();
-    const serial = a.serialNumber.toLowerCase();
-    const tipo = a.tipo?.nombre?.toLowerCase() || '';
-    
-    // Filtro Global
-    const matchGlobal = filtros.global === '' || marcaMod.includes(filtros.global.toLowerCase()) || serial.includes(filtros.global.toLowerCase()) || nombreCompleto.includes(filtros.global.toLowerCase());
-
-    // Filtros por Columna
-    const matchMarca = filtros.marcaModelo === '' || marcaMod.includes(filtros.marcaModelo.toLowerCase());
-    const matchSerial = filtros.serial === '' || serial.includes(filtros.serial.toLowerCase());
-    const matchUsuario = filtros.usuario === '' || nombreCompleto.includes(filtros.usuario.toLowerCase());
-    const matchTipo = filtros.tipo === '' || tipo.includes(filtros.tipo.toLowerCase());
-    const matchEstado = filtros.estado === '' || a.estado === filtros.estado;
-
-    return matchGlobal && matchMarca && matchSerial && matchUsuario && matchTipo && matchEstado;
-  });
-
-  // --- ACCIONES (Selección, Eliminar, Editar) ---
-  
-  // 1. SELECCIONAR UNO (Shift + Click)
-  const handleSelectOne = (id, index, e) => {
-    let nuevos = [...seleccionados];
-    if (e.shiftKey && ultimoSeleccionado !== null) {
-      const start = Math.min(ultimoSeleccionado, index), end = Math.max(ultimoSeleccionado, index);
-      const idsRango = activosFiltrados.slice(start, end + 1).map(a => a._id);
-      setSeleccionados(Array.from(new Set([...nuevos, ...idsRango])));
-    } else {
-      setSeleccionados(nuevos.includes(id) ? nuevos.filter(i => i !== id) : [...nuevos, id]);
-      setUltimoSeleccionado(index);
-    }
+  // LÓGICA DE ICONOS SEGÚN TIPO
+  const getIconForType = (typeName) => {
+    const name = typeName?.toLowerCase() || '';
+    if (name.includes('laptop') || name.includes('notebook')) return <Laptop size={18} className="text-blue-400" />;
+    if (name.includes('celular') || name.includes('telefono') || name.includes('mobile')) return <Smartphone size={18} className="text-green-400" />;
+    if (name.includes('monitor') || name.includes('pantalla')) return <Monitor size={18} className="text-purple-400" />;
+    if (name.includes('tablet') || name.includes('ipad')) return <Tablet size={18} className="text-orange-400" />;
+    if (name.includes('mouse') || name.includes('periferico')) return <MousePointer2 size={18} className="text-slate-400" />;
+    if (name.includes('disco') || name.includes('ssd') || name.includes('hdd')) return <HardDrive size={18} className="text-red-400" />;
+    return <Package size={18} className="text-slate-500" />;
   };
 
-  // 2. SELECCIONAR TODOS (Sobre los filtrados)
-  const handleSelectAll = () => {
-    // Si ya están todos los visibles seleccionados, deseleccionamos. Si no, seleccionamos todos.
-    const todosVisiblesSeleccionados = activosFiltrados.length > 0 && activosFiltrados.every(a => seleccionados.includes(a._id));
-    
-    if (todosVisiblesSeleccionados) {
-      setSeleccionados([]);
-    } else {
-      setSeleccionados(activosFiltrados.map(a => a._id));
-    }
+  const handleInputChange = (campo, valor) => {
+    const root = { 'Marca': 'marca', 'Modelo': 'modelo', 'Serial Number': 'serialNumber', 'Estado': 'estado' };
+    if (root[campo.nombreEtiqueta]) setNuevoActivo(prev => ({ ...prev, [root[campo.nombreEtiqueta]]: valor }));
+    else if (campo.tipoDato === 'usuario_search' || campo.nombreEtiqueta === 'Usuario Asignado') setNuevoActivo(prev => ({ ...prev, usuarioAsignado: valor }));
+    else setDetallesDinamicos(prev => ({ ...prev, [campo.nombreEtiqueta]: valor }));
   };
 
-  // 3. ELIMINAR INDIVIDUAL
-  const eliminarIndividual = async (id) => {
-    if (!window.confirm("¿Eliminar este activo permanentemente?")) return;
-    try {
-      await axios.delete(`http://localhost:5000/api/assets/${id}`);
-      cargarDatos();
-    } catch (e) { alert("Error al eliminar"); }
+  const getVal = (campo, a = null) => {
+    const d = a || nuevoActivo;
+    if (campo.nombreEtiqueta === 'Marca') return d.marca;
+    if (campo.nombreEtiqueta === 'Modelo') return d.modelo;
+    if (campo.nombreEtiqueta === 'Serial Number') return d.serialNumber;
+    if (campo.nombreEtiqueta === 'Estado') return d.estado;
+    if (campo.tipoDato === 'usuario_search' || campo.nombreEtiqueta === 'Usuario Asignado') return d.usuarioAsignado;
+    return (a ? a.detallesTecnicos?.[campo.nombreEtiqueta] : detallesDinamicos[campo.nombreEtiqueta]) || '';
   };
 
-  // 4. ELIMINAR MASIVO
-  const eliminarMasivo = async () => {
-    if (!window.confirm(`¿Eliminar ${seleccionados.length} activos?`)) return;
-    try {
-      await axios.post('http://localhost:5000/api/assets/bulk-delete', { ids: seleccionados });
-      setSeleccionados([]);
-      cargarDatos();
-    } catch (e) { alert("Error masivo"); }
-  };
-
-  // 5. PREPARAR EDICIÓN
   const prepararEdicion = (a) => {
-    setModoEdicion(true);
     setIdEdicion(a._id);
+    setModoEdicion(true);
     setNuevoActivo({
-      marca: a.marca, modelo: a.modelo, serialNumber: a.serialNumber,
-      estado: a.estado, tipo: a.tipo?._id, usuarioAsignado: a.usuarioAsignado?._id || ''
+      marca: a.marca || '',
+      modelo: a.modelo || '',
+      serialNumber: a.serialNumber || '',
+      estado: a.estado || 'Disponible',
+      tipo: a.tipo?._id || selectedType?._id,
+      usuarioAsignado: a.usuarioAsignado?._id || ''
     });
     setDetallesDinamicos(a.detallesTecnicos || {});
-    setTipoSeleccionadoObj(tiposActivos.find(t => t._id === a.tipo?._id));
+    if (a.usuarioAsignado) setUserSearchTerm(`${a.usuarioAsignado.nombre} ${a.usuarioAsignado.apellido}`);
+    else setUserSearchTerm('');
     setMostrarFormulario(true);
-    window.scrollTo({ top: 0, behavior: 'smooth' }); // Subir al formulario
-  };
-
-  const handleTipoChange = (e) => {
-    const tId = e.target.value;
-    const tObj = tiposActivos.find(t => t._id === tId);
-    setNuevoActivo({ ...nuevoActivo, tipo: tId });
-    setTipoSeleccionadoObj(tObj || null);
-    setDetallesDinamicos({}); // Reset campos
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const handleSubmit = async (e) => {
@@ -157,236 +122,212 @@ const Assets = () => {
     try {
       if (modoEdicion) await axios.put(`http://localhost:5000/api/assets/${idEdicion}`, body);
       else await axios.post('http://localhost:5000/api/assets', body);
-      setMostrarFormulario(false); setModoEdicion(false); setNuevoActivo({marca:'', modelo:'', serialNumber:'', estado:'Disponible', tipo:'', usuarioAsignado:''}); setDetallesDinamicos({});
+      resetEstadosFormulario();
       cargarDatos();
-    } catch (e) { alert("Error guardando"); }
+    } catch (e) { alert("Error al guardar"); }
   };
 
-  const handleQuickStatusChange = async (id, nuevoEstado) => {
-    try {
-      await axios.put(`http://localhost:5000/api/assets/${id}`, { estado: nuevoEstado });
-      cargarDatos();
-    } catch (e) { alert("Error status"); }
+  const baseAssets = useMemo(() => selectedType ? activos.filter(a => a.tipo?._id === selectedType._id) : [], [activos, selectedType]);
+
+  const activosFiltrados = useMemo(() => {
+    return baseAssets.filter(a => {
+      const nombreUsuario = a.usuarioAsignado ? `${a.usuarioAsignado.nombre} ${a.usuarioAsignado.apellido}` : 'Sin Asignar';
+      const rowContent = `${a.marca} ${a.modelo} ${a.serialNumber} ${nombreUsuario} ${JSON.stringify(a.detallesTecnicos)}`.toLowerCase();
+      if (busquedaGlobal && !rowContent.includes(busquedaGlobal.toLowerCase())) return false;
+      for (const colKey in activeFilters) {
+        const selectedValues = activeFilters[colKey];
+        if (selectedValues.length === 0) return false; 
+        let val = (colKey === 'Marca' ? a.marca : colKey === 'Modelo' ? a.modelo : colKey === 'Serial Number' ? a.serialNumber : colKey === 'Estado' ? a.estado : colKey === 'Usuario Asignado' ? nombreUsuario : a.detallesTecnicos?.[colKey]) || '(Vacío)';
+        if (!selectedValues.includes(val)) return false;
+      }
+      return true;
+    });
+  }, [baseAssets, busquedaGlobal, activeFilters]);
+
+  const FilterDropdown = ({ colKey }) => {
+    const uniqueValues = useMemo(() => {
+        const vals = baseAssets.map(a => {
+            if (colKey === 'Marca') return a.marca;
+            if (colKey === 'Modelo') return a.modelo;
+            if (colKey === 'Serial Number') return a.serialNumber;
+            if (colKey === 'Estado') return a.estado;
+            if (colKey === 'Usuario Asignado') return a.usuarioAsignado ? `${a.usuarioAsignado.nombre} ${a.usuarioAsignado.apellido}` : 'Sin Asignar';
+            return a.detallesTecnicos?.[colKey] || '(Vacío)';
+        });
+        return [...new Set(vals)].filter(Boolean).sort();
+    }, [baseAssets, colKey]);
+    const selected = activeFilters[colKey] || uniqueValues;
+    const [term, setTerm] = useState('');
+    const toggleAll = () => {
+        if (selected.length === uniqueValues.length) setActiveFilters({ ...activeFilters, [colKey]: [] });
+        else setActiveFilters({ ...activeFilters, [colKey]: uniqueValues });
+    };
+    const toggleItem = (val) => {
+        const newSelection = selected.includes(val) ? selected.filter(v => v !== val) : [...selected, val];
+        setActiveFilters({ ...activeFilters, [colKey]: newSelection });
+    };
+    return (
+      <div className="relative filter-container inline-block ml-2">
+        <Filter size={14} className={`cursor-pointer ${activeFilters[colKey] ? 'text-blue-500 fill-blue-500' : 'text-slate-500'}`} onClick={(e) => { e.stopPropagation(); setOpenFilterColumn(openFilterColumn === colKey ? null : colKey); }}/>
+        {openFilterColumn === colKey && (
+          <div className="absolute top-6 left-0 bg-slate-800 border border-slate-600 rounded-lg shadow-2xl z-50 w-64 p-3" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center bg-slate-900 border border-slate-700 rounded p-1 mb-2">
+              <Search size={12} className="mx-1 text-slate-500"/><input className="bg-transparent text-xs text-white outline-none w-full" placeholder="Buscar..." value={term} onChange={e => setTerm(e.target.value)} autoFocus/>
+            </div>
+            <label className="flex items-center gap-2 p-1 hover:bg-slate-700 cursor-pointer border-b border-slate-700 mb-1">
+              <input type="checkbox" checked={selected.length === uniqueValues.length} onChange={toggleAll} className="accent-blue-500"/>
+              <span className="text-xs font-bold text-white">(Seleccionar Todo)</span>
+            </label>
+            <div className="max-h-40 overflow-y-auto">
+              {uniqueValues.filter(v => String(v).toLowerCase().includes(term.toLowerCase())).map(v => (
+                <label key={v} className="flex items-center gap-2 p-1 hover:bg-slate-700 cursor-pointer">
+                  <input type="checkbox" checked={selected.includes(v)} onChange={() => toggleItem(v)} className="accent-blue-500"/>
+                  <span className="text-xs text-slate-300 truncate">{v}</span>
+                </label>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
   };
 
-  // --- IMPORTACIÓN ---
-  const handleFileUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const rows = await readXlsxFile(file);
-    setHeadersExcel(rows[0]); setArchivoData(rows.slice(1)); setModoImportar(true);
+  const UserSearchInput = ({ value, onChange }) => {
+    const selectedUser = usuarios.find(u => u._id === value);
+    const suggestions = usuarios.filter(u => (u.nombre + ' ' + u.apellido + ' ' + u.email).toLowerCase().includes(userSearchTerm.toLowerCase())).slice(0, 5);
+    return (
+      <div className="relative">
+        <div className="flex items-center bg-slate-900 border border-slate-700 rounded p-3 focus-within:border-blue-500">
+          <Search size={16} className="text-slate-500 mr-2"/>
+          <input className="bg-transparent outline-none text-white text-sm w-full" placeholder="Escribir nombre..." value={selectedUser && !showUserSuggestions ? `${selectedUser.nombre} ${selectedUser.apellido}` : userSearchTerm} onChange={e => { setUserSearchTerm(e.target.value); setShowUserSuggestions(true); }} onBlur={() => setTimeout(() => setShowUserSuggestions(false), 200)}/>
+        </div>
+        {showUserSuggestions && userSearchTerm && (
+          <div className="absolute top-full left-0 w-full bg-slate-800 border border-slate-700 rounded-lg mt-1 shadow-xl z-50">
+            {suggestions.map(u => (
+              <div key={u._id} className="p-3 hover:bg-blue-600/20 cursor-pointer text-sm" onMouseDown={() => { onChange(u._id); setUserSearchTerm(`${u.nombre} ${u.apellido}`); setShowUserSuggestions(false); }}>
+                {u.nombre} {u.apellido} <span className="text-slate-500 text-xs">- {u.email}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    );
   };
-  const finalizarImportacion = async () => {
-    if (!tipoParaImportar) return alert("Selecciona tipo");
-    setProcesando(true);
-    const data = archivoData.map(row => { let obj={}; Object.keys(mapeo).forEach(k=>obj[mapeo[k]]=row[k]); return obj; });
-    try { await axios.post('http://localhost:5000/api/assets/bulk-import', { tipoId: tipoParaImportar, activos: data }); setModoImportar(false); cargarDatos(); }
-    catch(e) { alert("Error import"); } finally { setProcesando(false); }
+
+  const handleSelectOne = (id, i, e) => {
+    let n = [...seleccionados];
+    if(e.shiftKey && ultimoSeleccionado !== null) {
+      const start=Math.min(ultimoSeleccionado, i), end=Math.max(ultimoSeleccionado, i);
+      const ids = activosFiltrados.slice(start, end+1).map(x=>x._id);
+      setSeleccionados(Array.from(new Set([...n, ...ids])));
+    } else {
+      setSeleccionados(n.includes(id) ? n.filter(x=>x!==id) : [...n, id]);
+      setUltimoSeleccionado(i);
+    }
   };
 
   return (
     <div className="p-8 pb-24 text-slate-200">
-      <div className="flex justify-between items-center mb-8">
-        <h1 className="text-3xl font-bold flex items-center gap-3"><Package className="text-blue-500"/> Gestión de Activos</h1>
-        <div className="flex gap-3">
-          
-          {/* BOTÓN COLUMNAS */}
-          <div className="relative">
-             <button onClick={() => setShowColMenu(!showColMenu)} className="bg-slate-800 border border-slate-700 p-2 rounded hover:bg-slate-700 flex items-center gap-2">
-                <Eye size={18}/>
-             </button>
-             {showColMenu && (
-               <div className="absolute right-0 mt-2 w-48 bg-slate-800 border border-slate-700 rounded-lg shadow-xl z-50 p-3">
-                  {Object.keys(cols).map(k => (
-                    <label key={k} className="flex items-center gap-2 mb-2 cursor-pointer capitalize text-sm hover:text-white">
-                      <input type="checkbox" checked={cols[k]} onChange={() => setCols({...cols, [k]: !cols[k]})} className="accent-blue-500"/> {k}
-                    </label>
-                  ))}
-               </div>
-             )}
+      {viewMode === 'dashboard' ? (
+        <div className="animate-fade-in">
+          <h1 className="text-3xl font-bold flex gap-3 mb-8"><Package className="text-blue-500"/> Activos IT</h1>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            {tiposActivos.map(t => (
+              <div key={t._id} onClick={() => handleCardClick(t)} className="bg-slate-800 p-6 rounded-xl border border-slate-700 hover:border-blue-500 cursor-pointer shadow-lg group transition-all hover:-translate-y-1">
+                <div className="flex justify-between mb-4"><div className="p-3 bg-blue-900/20 text-blue-400 rounded-lg group-hover:bg-blue-600 group-hover:text-white transition-colors">{getIconForType(t.nombre)}</div><span className="text-2xl font-bold">{activos.filter(a=>a.tipo?._id===t._id).length}</span></div>
+                <h3 className="font-bold text-lg">{t.nombre}</h3>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="animate-fade-in">
+          <div className="flex justify-between items-center mb-6">
+            <div className="flex items-center gap-4"><button onClick={handleBackToDashboard} className="p-2 bg-slate-800 rounded-full border border-slate-700 hover:bg-slate-700 transition-colors"><ArrowLeft/></button><h1 className="text-2xl font-bold">{selectedType.nombre}</h1></div>
+            <div className="flex gap-2">
+              <div className="relative"><Search className="absolute left-3 top-2.5 text-slate-500" size={16}/><input className="bg-slate-800 border border-slate-700 p-2 pl-9 rounded text-sm w-64 outline-none focus:border-blue-500 transition-all" placeholder="Buscar..." value={busquedaGlobal} onChange={e=>setBusquedaGlobal(e.target.value)}/></div>
+              <button onClick={() => {
+                const data = activosFiltrados.map(a => ({ Marca: a.marca, Modelo: a.modelo, 'S/N': a.serialNumber, Usuario: a.usuarioAsignado ? `${a.usuarioAsignado.nombre} ${a.usuarioAsignado.apellido}` : 'Libre', Estado: a.estado, ...a.detallesTecnicos }));
+                const ws = XLSX.utils.json_to_sheet(data);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, "Activos");
+                XLSX.writeFile(wb, `Inv_${selectedType.nombre}.xlsx`);
+              }} className="bg-slate-800 border border-slate-700 p-2 rounded hover:bg-slate-700 hover:text-blue-400 transition-all" title="Exportar Excel"><Download size={18}/></button>
+              <button onClick={() => mostrarFormulario ? resetEstadosFormulario() : prepararCreacion()} className={`px-4 py-2 rounded font-bold text-white transition-all ${mostrarFormulario ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'}`}>{mostrarFormulario ? 'Cancelar' : 'Nuevo'}</button>
+            </div>
           </div>
 
-          {!modoImportar && !mostrarFormulario && (
-            <div className="relative">
-              <input type="file" accept=".xlsx" onChange={handleFileUpload} className="absolute inset-0 w-full opacity-0 cursor-pointer" />
-              <button className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded flex items-center gap-2 font-medium"><Upload size={18}/> Importar</button>
+          {mostrarFormulario && (
+            <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 mb-8 shadow-2xl animate-fade-in">
+              <h2 className="text-lg font-bold mb-6 border-b border-slate-700 pb-2 flex items-center gap-2">{modoEdicion ? <Pencil size={20} className="text-blue-500"/> : <Plus size={20} className="text-green-500"/>} {modoEdicion ? 'Editar' : 'Registrar'} {selectedType.nombre}</h2>
+              <form onSubmit={handleSubmit}>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {selectedType.campos.map(c => (
+                    <div key={c.nombreEtiqueta}>
+                      <label className="text-[10px] text-slate-400 font-bold uppercase mb-1 block">{c.nombreEtiqueta}</label>
+                      {c.tipoDato === 'usuario_search' ? <UserSearchInput value={nuevoActivo.usuarioAsignado} onChange={id => handleInputChange(c, id)}/> : 
+                       c.tipoDato === 'dropdown' ? (
+                        <select className="w-full bg-slate-900 border border-slate-700 p-3 rounded text-white text-sm outline-none focus:border-blue-500" value={getVal(c)} onChange={e => handleInputChange(c, e.target.value)}>
+                          <option value="">-- Seleccionar --</option>
+                          {c.opciones?.map(op => <option key={op} value={op}>{op}</option>)}
+                        </select>
+                       ) : <input className="w-full bg-slate-900 border border-slate-700 p-3 rounded text-white text-sm outline-none focus:border-blue-500" type={c.tipoDato === 'number' ? 'number' : c.tipoDato === 'date' ? 'date' : 'text'} value={getVal(c)} onChange={e => handleInputChange(c, e.target.value)} required={['Marca','Modelo','Serial Number'].includes(c.nombreEtiqueta)}/>}
+                    </div>
+                  ))}
+                </div>
+                <button className="w-full mt-6 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg flex justify-center items-center gap-2 transition-all shadow-lg shadow-blue-900/20"><Save size={18}/> Guardar</button>
+              </form>
             </div>
           )}
 
-          <button onClick={() => { if(mostrarFormulario) setModoEdicion(false); setMostrarFormulario(!mostrarFormulario); }} className={`px-4 py-2 rounded font-bold text-white shadow-lg ${mostrarFormulario ? 'bg-red-600' : 'bg-blue-600'}`}>
-            {mostrarFormulario ? 'Cancelar' : 'Nuevo Activo'}
-          </button>
-        </div>
-      </div>
-
-      {/* FORMULARIO */}
-      {mostrarFormulario && (
-        <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 mb-8 shadow-2xl animate-fade-in">
-          <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
-            {modoEdicion ? <Pencil className="text-blue-400"/> : <Plus className="text-green-400"/>}
-            {modoEdicion ? 'Editar Registro' : 'Nuevo Activo'}
-          </h2>
-          <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div className="space-y-4">
-              <div>
-                 <label className="text-xs text-slate-500 uppercase font-bold">Tipo</label>
-                 <select className="w-full bg-slate-900 border border-slate-700 p-3 rounded text-white" value={nuevoActivo.tipo} onChange={handleTipoChange} required>
-                  <option value="">-- Seleccionar --</option>
-                  {tiposActivos.map(t => <option key={t._id} value={t._id}>{t.nombre}</option>)}
-                </select>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <input placeholder="Marca" className="bg-slate-900 border border-slate-700 p-3 rounded text-white" value={nuevoActivo.marca} onChange={e => setNuevoActivo({...nuevoActivo, marca: e.target.value})} required />
-                <input placeholder="Modelo" className="bg-slate-900 border border-slate-700 p-3 rounded text-white" value={nuevoActivo.modelo} onChange={e => setNuevoActivo({...nuevoActivo, modelo: e.target.value})} required />
-              </div>
-              <input placeholder="Serial Number (S/N)" className="w-full bg-slate-900 border border-slate-700 p-3 rounded text-white font-mono" value={nuevoActivo.serialNumber} onChange={e => setNuevoActivo({...nuevoActivo, serialNumber: e.target.value})} required />
-            </div>
-            <div className="space-y-4">
-              <div>
-                <label className="text-xs text-slate-500 uppercase font-bold">Asignado a</label>
-                <select className="w-full bg-slate-900 border border-slate-700 p-3 rounded text-white" value={nuevoActivo.usuarioAsignado} onChange={e => setNuevoActivo({...nuevoActivo, usuarioAsignado: e.target.value})}>
-                  <option value="">-- Sin Asignar --</option>
-                  {usuarios.map(u => <option key={u._id} value={u._id}>{u.nombre} {u.apellido} ({u.area})</option>)}
-                </select>
-              </div>
-              <div className="bg-slate-900/50 p-4 rounded-lg border border-slate-700/50 grid grid-cols-2 gap-3">
-                {tipoSeleccionadoObj?.campos.length > 0 ? (
-                    tipoSeleccionadoObj.campos.map(c => (
-                      <div key={c.nombreEtiqueta}>
-                        <label className="text-[10px] text-slate-400">{c.nombreEtiqueta}</label>
-                        <input className="w-full bg-slate-800 border border-slate-700 p-2 rounded text-white text-sm" value={detallesDinamicos[c.nombreEtiqueta] || ''} onChange={e => setDetallesDinamicos({...detallesDinamicos, [c.nombreEtiqueta]: e.target.value})} />
-                      </div>
-                    ))
-                ) : <p className="col-span-2 text-xs text-slate-500 italic">Selecciona un tipo para ver campos técnicos.</p>}
-              </div>
-              <button className="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg">Guardar</button>
-            </div>
-          </form>
-        </div>
-      )}
-
-      {/* IMPORTADOR */}
-      {modoImportar && (
-        <div className="bg-slate-800 p-6 rounded-xl border-2 border-blue-600 mb-8">
-            <div className="flex justify-between mb-4"><h2 className="font-bold flex items-center gap-2"><Download/> Mapeo de Importación</h2><button onClick={() => setModoImportar(false)}><X/></button></div>
-            <select className="bg-slate-900 text-white p-3 rounded border border-slate-700 mb-4 w-full" value={tipoParaImportar} onChange={(e) => { setTipoParaImportar(e.target.value); setMapeo({}); }}>
-            <option value="">-- ¿Qué tipo estás importando? --</option>
-            {tiposActivos.map(t => <option key={t._id} value={t._id}>{t.nombre}</option>)}
-            </select>
-            {tipoParaImportar && (
-            <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs mb-4">
-                <thead><tr className="bg-slate-900">{headersExcel.map((h, i) => (<th key={i} className="p-2 min-w-[150px]"><select className="w-full bg-blue-600 text-white p-1 rounded mb-1" onChange={(e) => setMapeo({...mapeo, [i]: e.target.value})}><option value="">Ignorar</option><optgroup label="Fijos"><option value="marca">Marca</option><option value="modelo">Modelo</option><option value="serialNumber">S/N</option><option value="emailUsuario">Email Usuario</option></optgroup><optgroup label="Técnicos">{tiposActivos.find(t => t._id === tipoParaImportar)?.campos.map(c => <option key={c.nombreEtiqueta} value={c.nombreEtiqueta}>{c.nombreEtiqueta}</option>)}</optgroup></select><div className="text-slate-500">{h}</div></th>))}</tr></thead>
-                </table>
-                <button onClick={finalizarImportacion} disabled={procesando} className="w-full bg-green-600 text-white py-2 rounded font-bold">Confirmar e Importar</button>
-            </div>
-            )}
-        </div>
-      )}
-
-      {/* BARRA BUSQUEDA GLOBAL */}
-      <div className="mb-6 relative">
-         <Search className="absolute left-4 top-3.5 text-slate-500" size={20}/>
-         <input placeholder="Búsqueda Global..." className="w-full bg-slate-800 border border-slate-700 p-3.5 pl-12 rounded-xl outline-none focus:border-blue-500" value={filtros.global} onChange={e => setFiltros({...filtros, global: e.target.value})} />
-      </div>
-
-      {/* TABLA PRINCIPAL */}
-      <div className="bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden shadow-xl">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-slate-900 text-slate-400 text-[11px] uppercase tracking-wider">
-                <th className="p-4 w-12 text-center border-b border-slate-700">
-                    {/* SELECCIONAR TODOS: BOTÓN CORREGIDO */}
-                    <button onClick={handleSelectAll}>
-                        {activosFiltrados.length > 0 && seleccionados.length > 0 && activosFiltrados.every(a => seleccionados.includes(a._id)) 
-                            ? <CheckSquare size={18} className="text-blue-500"/> 
-                            : <Square size={18}/>}
-                    </button>
-                </th>
-                
-                {cols.tipo && <th className="p-4 border-b border-slate-700 min-w-[140px]">
-                   <div className="flex flex-col gap-2"><span>Tipo</span><input className="bg-slate-800 border border-slate-700 p-1 rounded font-normal text-white lowercase" placeholder="Filtro..." value={filtros.tipo} onChange={e => setFiltros({...filtros, tipo: e.target.value})}/></div>
-                </th>}
-
-                {cols.marca && <th className="p-4 border-b border-slate-700 min-w-[180px]">
-                   <div className="flex flex-col gap-2"><span>Marca / Modelo</span><input className="bg-slate-800 border border-slate-700 p-1 rounded font-normal text-white" placeholder="Filtro..." value={filtros.marcaModelo} onChange={e => setFiltros({...filtros, marcaModelo: e.target.value})}/></div>
-                </th>}
-
-                {cols.serial && <th className="p-4 border-b border-slate-700">
-                   <div className="flex flex-col gap-2"><span>S/N</span><input className="bg-slate-800 border border-slate-700 p-1 rounded font-normal text-white" placeholder="Filtro..." value={filtros.serial} onChange={e => setFiltros({...filtros, serial: e.target.value})}/></div>
-                </th>}
-
-                {cols.detalles && <th className="p-4 border-b border-slate-700">Specs</th>}
-
-                {cols.usuario && <th className="p-4 border-b border-slate-700 min-w-[180px]">
-                   <div className="flex flex-col gap-2"><span>Asignado a</span><input className="bg-slate-800 border border-slate-700 p-1 rounded font-normal text-white" placeholder="Nombre..." value={filtros.usuario} onChange={e => setFiltros({...filtros, usuario: e.target.value})}/></div>
-                </th>}
-
-                {cols.estado && <th className="p-4 border-b border-slate-700 min-w-[140px]">
-                   <div className="flex flex-col gap-2"><span>Estado</span>
-                   <select className="bg-slate-800 border border-slate-700 p-1 rounded font-normal text-white" value={filtros.estado} onChange={e => setFiltros({...filtros, estado: e.target.value})}><option value="">Todos</option><option value="Disponible">Disponible</option><option value="Asignado">Asignado</option><option value="Reparación">Reparación</option></select></div>
-                </th>}
-                <th className="p-4 border-b border-slate-700 text-right">Acciones</th>
-              </tr>
-            </thead>
-            
-            <tbody className="divide-y divide-slate-700/50">
-              {activosFiltrados.map((a, index) => {
-                const isSelected = seleccionados.includes(a._id);
-                return (
-                  <tr key={a._id} className={`transition-colors group ${isSelected ? 'bg-blue-900/20' : 'hover:bg-slate-700/30'}`}>
-                    <td className="p-4 text-center">
-                        {/* SELECCIÓN INDIVIDUAL */}
-                        <button onClick={(e) => handleSelectOne(a._id, index, e)}>
-                            {isSelected ? <CheckSquare size={18} className="text-blue-500"/> : <Square size={18} className="text-slate-600"/>}
-                        </button>
-                    </td>
-
-                    {cols.tipo && <td className="p-4"><span className="bg-slate-900 text-blue-400 px-2 py-1 rounded text-[10px] font-bold uppercase border border-blue-500/20">{a.tipo?.nombre}</span></td>}
-                    {cols.marca && <td className="p-4"><div className="font-bold text-white">{a.marca}</div><div className="text-xs text-slate-500">{a.modelo}</div></td>}
-                    {cols.serial && <td className="p-4 font-mono text-xs text-slate-400">{a.serialNumber}</td>}
-                    
-                    {cols.detalles && <td className="p-4 text-[10px] text-slate-400">
-                        {Object.entries(a.detallesTecnicos || {}).map(([k,v]) => <div key={k}><span className="text-slate-600 uppercase">{k}:</span> {v}</div>)}
-                    </td>}
-
-                    {cols.usuario && <td className="p-4">
-                        {a.usuarioAsignado ? (
-                            <div className="flex flex-col">
-                                <span className="text-sm font-semibold text-white">{a.usuarioAsignado.nombre} {a.usuarioAsignado.apellido}</span>
-                                <span className="text-[10px] text-slate-500 uppercase">{a.usuarioAsignado.area}</span>
-                            </div>
-                        ) : <span className="text-slate-600 italic text-xs">Sin asignar</span>}
-                    </td>}
-
-                    {cols.estado && <td className="p-4">
-                        <select value={a.estado} onChange={(e) => handleQuickStatusChange(a._id, e.target.value)} className={`bg-transparent font-bold text-xs outline-none cursor-pointer border rounded px-2 py-1 ${a.estado === 'Disponible' ? 'text-green-400 border-green-400/20' : a.estado === 'Asignado' ? 'text-blue-400 border-blue-400/20' : 'text-yellow-400 border-yellow-400/20'}`}>
-                            <option value="Disponible" className="bg-slate-800">Disponible</option><option value="Asignado" className="bg-slate-800">Asignado</option><option value="Reparación" className="bg-slate-800">Reparación</option><option value="Baja" className="bg-slate-800 text-red-400">Baja</option>
-                        </select>
-                    </td>}
-
-                    <td className="p-4 text-right">
-                        <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button onClick={() => prepararEdicion(a)} className="p-2 hover:bg-blue-500/20 text-blue-400 rounded-lg"><Pencil size={16}/></button>
-                            <button onClick={() => eliminarIndividual(a._id)} className="p-2 hover:bg-red-500/20 text-red-400 rounded-lg"><Trash2 size={16}/></button>
-                        </div>
+          <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-visible shadow-xl min-h-[400px]">
+            <table className="w-full text-left border-collapse">
+              <thead className="bg-slate-900 text-slate-400 text-[11px] uppercase tracking-wider sticky top-0 z-20">
+                <tr>
+                  <th className="p-4 w-12 border-b border-slate-700"><button onClick={handleSelectAll}><CheckSquare size={18} className={seleccionados.length > 0 && seleccionados.length === activosFiltrados.length ? "text-blue-500" : "text-slate-600"}/></button></th>
+                  <th className="p-4 w-10 border-b border-slate-700"></th> {/* Nueva columna para el Icono */}
+                  {selectedType.campos.map(c => (
+                    <th key={c.nombreEtiqueta} className="p-4 border-b border-slate-700 text-blue-300">
+                      <div className="flex items-center">{c.nombreEtiqueta} <FilterDropdown colKey={c.nombreEtiqueta}/></div>
+                    </th>
+                  ))}
+                  <th className="p-4 border-b border-slate-700 text-right">Acciones</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-700/50">
+                {activosFiltrados.map((a, i) => (
+                  <tr key={a._id} className={`group hover:bg-slate-700/30 ${seleccionados.includes(a._id) ? 'bg-blue-900/20' : ''} transition-colors`}>
+                    <td className="p-4 text-center"><button onClick={(e) => handleSelectOne(a._id, i, e)}><CheckSquare size={18} className={seleccionados.includes(a._id) ? "text-blue-500" : "text-slate-600"}/></button></td>
+                    <td className="p-4">{getIconForType(selectedType.nombre)}</td> {/* Celda del Icono */}
+                    {selectedType.campos.map(c => {
+                      const val = getVal(c, a);
+                      const display = (c.nombreEtiqueta === 'Usuario Asignado' && a.usuarioAsignado) ? `${a.usuarioAsignado.nombre} ${a.usuarioAsignado.apellido}` : (val || '-');
+                      if (c.nombreEtiqueta === 'Estado') return (
+                        <td key={c.nombreEtiqueta} className="p-4">
+                          <select value={a.estado} onChange={e => axios.put(`http://localhost:5000/api/assets/${a._id}`, { estado: e.target.value }).then(cargarDatos)} className={`bg-transparent border rounded px-1 text-[10px] font-bold outline-none cursor-pointer ${a.estado === 'Disponible' ? 'text-green-400 border-green-500/20' : a.estado === 'Asignado' ? 'text-blue-400 border-blue-500/20' : 'text-yellow-400 border-yellow-500/20'}`}>
+                            <option value="Disponible" className="bg-slate-800">Disponible</option><option value="Asignado" className="bg-slate-800">Asignado</option><option value="Reparación" className="bg-slate-800">Reparación</option><option value="Baja" className="bg-slate-800">Baja</option>
+                          </select>
+                        </td>
+                      );
+                      return <td key={c.nombreEtiqueta} className="p-4 text-xs">{display}</td>;
+                    })}
+                    <td className="p-4 text-right flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => prepararEdicion(a)} className="text-blue-400 p-1 hover:bg-slate-700 rounded transition-all"><Pencil size={16}/></button>
+                      <button onClick={() => { if(window.confirm('¿Borrar?')) axios.delete(`http://localhost:5000/api/assets/${a._id}`).then(cargarDatos); }} className="text-red-400 p-1 hover:bg-slate-700 rounded transition-all"><Trash2 size={16}/></button>
                     </td>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          {activosFiltrados.length === 0 && <div className="p-12 text-center text-slate-500">No hay resultados.</div>}
-        </div>
-      </div>
+                ))}
+              </tbody>
+            </table>
+          </div>
 
-      {/* BARRA FLOTANTE MASIVA */}
-      {seleccionados.length > 0 && (
-        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-blue-600 text-white px-8 py-4 rounded-full flex gap-6 z-50 shadow-2xl items-center animate-bounce-in">
-          <span className="font-bold flex items-center gap-2"><CheckSquare/> {seleccionados.length} Seleccionados</span>
-          <button onClick={eliminarMasivo} className="bg-red-500 hover:bg-red-400 px-4 py-1.5 rounded-full font-bold text-sm transition-all">Eliminar Todo</button>
-          <button onClick={() => setSeleccionados([])} className="hover:rotate-90 transition-all"><X/></button>
+          {seleccionados.length > 0 && (
+            <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-blue-600 text-white px-8 py-4 rounded-full flex gap-6 z-50 shadow-2xl items-center animate-bounce-in">
+              <span className="font-bold">{seleccionados.length} Seleccionados</span>
+              <button onClick={() => { if(window.confirm(`¿Borrar ${seleccionados.length} activos?`)) axios.post('http://localhost:5000/api/assets/bulk-delete', { ids: seleccionados }).then(() => { setSeleccionados([]); cargarDatos(); }); }} className="bg-red-500 hover:bg-red-400 px-4 py-1.5 rounded-full font-bold text-sm transition-all shadow-md">Eliminar Todo</button>
+              <button onClick={() => setSeleccionados([])} className="hover:rotate-90 transition-all"><X/></button>
+            </div>
+          )}
         </div>
       )}
     </div>
