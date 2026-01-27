@@ -5,7 +5,7 @@ import * as XLSX from 'xlsx';
 import { 
   Plus, Search, Package, Pencil, Trash2, CheckSquare, Square, 
   Download, Upload, Check, Filter, ArrowLeft, X, Save, User,
-  Laptop, Smartphone, Monitor, Tablet, MousePointer2, HardDrive, Cpu
+  Laptop, Smartphone, Monitor, Tablet, MousePointer2, HardDrive, Headphones, Cpu
 } from 'lucide-react';
 
 const Assets = () => {
@@ -32,29 +32,13 @@ const Assets = () => {
   const [mapeo, setMapeo] = useState({});
   const [procesando, setProcesando] = useState(false);
 
-  // Form
+  // Form & Search
   const [nuevoActivo, setNuevoActivo] = useState({ marca: '', modelo: '', serialNumber: '', estado: 'Disponible', tipo: '', usuarioAsignado: '' });
   const [detallesDinamicos, setDetallesDinamicos] = useState({});
   const [userSearchTerm, setUserSearchTerm] = useState('');
   const [showUserSuggestions, setShowUserSuggestions] = useState(false);
 
   useEffect(() => { cargarDatos(); }, []);
-
-  // LIMPIEZA DE ESTADO AL CAMBIAR DE VISTA O NAVEGAR
-  useEffect(() => {
-    if (viewMode === 'dashboard') {
-      resetEstadosFormulario();
-    }
-  }, [viewMode]);
-
-  const resetEstadosFormulario = () => {
-    setMostrarFormulario(false);
-    setModoEdicion(false);
-    setIdEdicion(null);
-    setNuevoActivo({ marca: '', modelo: '', serialNumber: '', estado: 'Disponible', tipo: selectedType?._id || '', usuarioAsignado: '' });
-    setDetallesDinamicos({});
-    setUserSearchTerm('');
-  };
 
   const cargarDatos = async () => {
     try {
@@ -63,55 +47,101 @@ const Assets = () => {
         axios.get('http://localhost:5000/api/asset-types'),
         axios.get('http://localhost:5000/api/users')
       ]);
-      setActivos(resA.data);
-      setTiposActivos(resT.data);
-      setUsuarios(resU.data);
-    } catch (e) { console.error(e); }
+      setActivos(resA.data || []);
+      setTiposActivos(resT.data || []);
+      setUsuarios(resU.data || []);
+    } catch (e) { console.error("Error cargando datos:", e); }
   };
 
-  // LÓGICA DE ICONOS SEGÚN TIPO
+  // --- LOGICA DE FILTRADO SEGURA (FIX PARA CRASH) ---
+  const baseAssets = useMemo(() => {
+    if (!selectedType) return [];
+    return activos.filter(a => {
+        // Verifica si a.tipo es objeto o string para evitar fallos
+        const tipoId = a.tipo?._id || a.tipo;
+        return String(tipoId) === String(selectedType._id);
+    });
+  }, [activos, selectedType]);
+
+  const activosFiltrados = useMemo(() => {
+    return baseAssets.filter(a => {
+      const nombreUsuario = a.usuarioAsignado ? `${a.usuarioAsignado.nombre} ${a.usuarioAsignado.apellido}` : 'Sin Asignar';
+      const rowContent = `${a.marca} ${a.modelo} ${a.serialNumber} ${nombreUsuario} ${JSON.stringify(a.detallesTecnicos)}`.toLowerCase();
+      
+      if (busquedaGlobal && !rowContent.includes(busquedaGlobal.toLowerCase())) return false;
+
+      for (const colKey in activeFilters) {
+        const selectedValues = activeFilters[colKey];
+        if (selectedValues.length === 0) return false; 
+        
+        let actualValue = '';
+        if (colKey === 'Marca') actualValue = a.marca;
+        else if (colKey === 'Modelo') actualValue = a.modelo;
+        else if (colKey === 'Serial Number') actualValue = a.serialNumber;
+        else if (colKey === 'Estado') actualValue = a.estado;
+        else if (colKey === 'Usuario Asignado') actualValue = nombreUsuario;
+        else actualValue = a.detallesTecnicos?.[colKey] || '(Vacío)';
+
+        if (!selectedValues.includes(actualValue)) return false;
+      }
+      return true;
+    });
+  }, [baseAssets, busquedaGlobal, activeFilters]);
+
+  // --- HELPERS ---
   const getIconForType = (typeName) => {
     const name = typeName?.toLowerCase() || '';
-    if (name.includes('laptop') || name.includes('notebook')) return <Laptop size={18} className="text-blue-400" />;
-    if (name.includes('celular') || name.includes('telefono') || name.includes('mobile')) return <Smartphone size={18} className="text-green-400" />;
+    if (name.includes('laptop')) return <Laptop size={18} className="text-blue-400" />;
+    if (name.includes('celular') || name.includes('movil')) return <Smartphone size={18} className="text-green-400" />;
     if (name.includes('monitor') || name.includes('pantalla')) return <Monitor size={18} className="text-purple-400" />;
-    if (name.includes('tablet') || name.includes('ipad')) return <Tablet size={18} className="text-orange-400" />;
-    if (name.includes('mouse') || name.includes('periferico')) return <MousePointer2 size={18} className="text-slate-400" />;
-    if (name.includes('disco') || name.includes('ssd') || name.includes('hdd')) return <HardDrive size={18} className="text-red-400" />;
+    if (name.includes('auricular') || name.includes('headset')) return <Headphones size={18} className="text-orange-400" />;
+    if (name.includes('tablet')) return <Tablet size={18} className="text-teal-400" />;
     return <Package size={18} className="text-slate-500" />;
   };
 
+  const getRootKey = (label) => {
+    const l = label.toLowerCase();
+    if (l === 'marca') return 'marca';
+    if (l === 'modelo') return 'modelo';
+    if (l === 'serial number' || l === 's/n') return 'serialNumber';
+    if (l === 'estado') return 'estado';
+    if (l === 'usuario asignado') return 'usuarioAsignado';
+    return null;
+  };
+
   const handleInputChange = (campo, valor) => {
-    const root = { 'Marca': 'marca', 'Modelo': 'modelo', 'Serial Number': 'serialNumber', 'Estado': 'estado' };
-    if (root[campo.nombreEtiqueta]) setNuevoActivo(prev => ({ ...prev, [root[campo.nombreEtiqueta]]: valor }));
-    else if (campo.tipoDato === 'usuario_search' || campo.nombreEtiqueta === 'Usuario Asignado') setNuevoActivo(prev => ({ ...prev, usuarioAsignado: valor }));
+    const rk = getRootKey(campo.nombreEtiqueta);
+    if (rk) setNuevoActivo(prev => ({ ...prev, [rk]: valor }));
     else setDetallesDinamicos(prev => ({ ...prev, [campo.nombreEtiqueta]: valor }));
   };
 
-  const getVal = (campo, a = null) => {
+  const getFieldValue = (campo, a = null) => {
     const d = a || nuevoActivo;
-    if (campo.nombreEtiqueta === 'Marca') return d.marca;
-    if (campo.nombreEtiqueta === 'Modelo') return d.modelo;
-    if (campo.nombreEtiqueta === 'Serial Number') return d.serialNumber;
-    if (campo.nombreEtiqueta === 'Estado') return d.estado;
-    if (campo.tipoDato === 'usuario_search' || campo.nombreEtiqueta === 'Usuario Asignado') return d.usuarioAsignado;
+    const rk = getRootKey(campo.nombreEtiqueta);
+    if (rk) return d[rk];
     return (a ? a.detallesTecnicos?.[campo.nombreEtiqueta] : detallesDinamicos[campo.nombreEtiqueta]) || '';
+  };
+
+  // --- ACCIONES ---
+  const handleCardClick = (t) => { setSelectedType(t); setViewMode('list'); setMostrarFormulario(false); setActiveFilters({}); setSeleccionados([]); };
+  const handleBackToDashboard = () => { setViewMode('dashboard'); setSelectedType(null); setMostrarFormulario(false); setModoImportar(false); setSeleccionados([]); };
+
+  const prepararCreacion = () => {
+    setModoEdicion(false);
+    setIdEdicion(null);
+    setNuevoActivo({ marca: '', modelo: '', serialNumber: '', estado: 'Disponible', tipo: selectedType._id, usuarioAsignado: '' });
+    setDetallesDinamicos({});
+    setUserSearchTerm('');
+    setMostrarFormulario(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const prepararEdicion = (a) => {
     setIdEdicion(a._id);
     setModoEdicion(true);
-    setNuevoActivo({
-      marca: a.marca || '',
-      modelo: a.modelo || '',
-      serialNumber: a.serialNumber || '',
-      estado: a.estado || 'Disponible',
-      tipo: a.tipo?._id || selectedType?._id,
-      usuarioAsignado: a.usuarioAsignado?._id || ''
-    });
+    setNuevoActivo({ marca: a.marca, modelo: a.modelo, serialNumber: a.serialNumber, estado: a.estado, tipo: selectedType._id, usuarioAsignado: a.usuarioAsignado?._id || '' });
     setDetallesDinamicos(a.detallesTecnicos || {});
     if (a.usuarioAsignado) setUserSearchTerm(`${a.usuarioAsignado.nombre} ${a.usuarioAsignado.apellido}`);
-    else setUserSearchTerm('');
     setMostrarFormulario(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -122,55 +152,70 @@ const Assets = () => {
     try {
       if (modoEdicion) await axios.put(`http://localhost:5000/api/assets/${idEdicion}`, body);
       else await axios.post('http://localhost:5000/api/assets', body);
-      resetEstadosFormulario();
-      cargarDatos();
+      setMostrarFormulario(false); cargarDatos();
     } catch (e) { alert("Error al guardar"); }
   };
 
-  const baseAssets = useMemo(() => selectedType ? activos.filter(a => a.tipo?._id === selectedType._id) : [], [activos, selectedType]);
+  // --- IMPORT / EXPORT ---
+  const exportarExcel = () => {
+    const data = activosFiltrados.map(a => ({ Marca: a.marca, Modelo: a.modelo, Serial: a.serialNumber, Estado: a.estado, Usuario: a.usuarioAsignado?.nombre || 'Libre', ...a.detallesTecnicos }));
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Activos");
+    XLSX.writeFile(wb, `Inv_${selectedType.nombre}.xlsx`);
+  };
 
-  const activosFiltrados = useMemo(() => {
-    return baseAssets.filter(a => {
-      const nombreUsuario = a.usuarioAsignado ? `${a.usuarioAsignado.nombre} ${a.usuarioAsignado.apellido}` : 'Sin Asignar';
-      const rowContent = `${a.marca} ${a.modelo} ${a.serialNumber} ${nombreUsuario} ${JSON.stringify(a.detallesTecnicos)}`.toLowerCase();
-      if (busquedaGlobal && !rowContent.includes(busquedaGlobal.toLowerCase())) return false;
-      for (const colKey in activeFilters) {
-        const selectedValues = activeFilters[colKey];
-        if (selectedValues.length === 0) return false; 
-        let val = (colKey === 'Marca' ? a.marca : colKey === 'Modelo' ? a.modelo : colKey === 'Serial Number' ? a.serialNumber : colKey === 'Estado' ? a.estado : colKey === 'Usuario Asignado' ? nombreUsuario : a.detallesTecnicos?.[colKey]) || '(Vacío)';
-        if (!selectedValues.includes(val)) return false;
-      }
-      return true;
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const rows = await readXlsxFile(file);
+    setHeadersExcel(rows[0]);
+    setArchivoData(rows.slice(1));
+    setModoImportar(true);
+  };
+
+  const finalizarImportacion = async () => {
+    setProcesando(true);
+    const data = archivoData.map(row => {
+      let obj = {};
+      Object.keys(mapeo).forEach(idx => {
+        const campoDestino = mapeo[idx];
+        const alias = { 'Marca': 'marca', 'Modelo': 'modelo', 'Serial Number': 'serialNumber', 'Estado': 'estado', 'Usuario Asignado': 'emailUsuario' };
+        obj[alias[campoDestino] || campoDestino] = row[idx];
+      });
+      return obj;
     });
-  }, [baseAssets, busquedaGlobal, activeFilters]);
+    try {
+      await axios.post('http://localhost:5000/api/assets/bulk-import', { tipoId: selectedType._id, activos: data });
+      setModoImportar(false); cargarDatos();
+    } catch (e) { alert("Error importación"); } finally { setProcesando(false); }
+  };
 
+  // --- COMPONENTES FILTROS Y UI ---
   const FilterDropdown = ({ colKey }) => {
     const uniqueValues = useMemo(() => {
-        const vals = baseAssets.map(a => {
-            if (colKey === 'Marca') return a.marca;
-            if (colKey === 'Modelo') return a.modelo;
-            if (colKey === 'Serial Number') return a.serialNumber;
-            if (colKey === 'Estado') return a.estado;
-            if (colKey === 'Usuario Asignado') return a.usuarioAsignado ? `${a.usuarioAsignado.nombre} ${a.usuarioAsignado.apellido}` : 'Sin Asignar';
-            return a.detallesTecnicos?.[colKey] || '(Vacío)';
-        });
-        return [...new Set(vals)].filter(Boolean).sort();
+      const vals = baseAssets.map(a => {
+        if (colKey === 'Usuario Asignado') return a.usuarioAsignado ? `${a.usuarioAsignado.nombre} ${a.usuarioAsignado.apellido}` : 'Sin Asignar';
+        const rk = getRootKey(colKey);
+        return rk ? a[rk] : a.detallesTecnicos?.[colKey] || '(Vacío)';
+      });
+      return [...new Set(vals)].filter(Boolean).sort();
     }, [baseAssets, colKey]);
+    
     const selected = activeFilters[colKey] || uniqueValues;
     const [term, setTerm] = useState('');
-    const toggleAll = () => {
-        if (selected.length === uniqueValues.length) setActiveFilters({ ...activeFilters, [colKey]: [] });
-        else setActiveFilters({ ...activeFilters, [colKey]: uniqueValues });
-    };
+    
+    const toggleAll = () => setActiveFilters({ ...activeFilters, [colKey]: selected.length === uniqueValues.length ? [] : uniqueValues });
     const toggleItem = (val) => {
         const newSelection = selected.includes(val) ? selected.filter(v => v !== val) : [...selected, val];
         setActiveFilters({ ...activeFilters, [colKey]: newSelection });
     };
+
     return (
       <div className="relative filter-container inline-block ml-2">
-        <Filter size={14} className={`cursor-pointer ${activeFilters[colKey] ? 'text-blue-500 fill-blue-500' : 'text-slate-500'}`} onClick={(e) => { e.stopPropagation(); setOpenFilterColumn(openFilterColumn === colKey ? null : colKey); }}/>
+        <Filter size={14} className={`cursor-pointer ${activeFilters[colKey] && activeFilters[colKey].length !== uniqueValues.length ? 'text-blue-500 fill-blue-500' : 'text-slate-500'}`} onClick={() => setOpenFilterColumn(openFilterColumn === colKey ? null : colKey)}/>
         {openFilterColumn === colKey && (
-          <div className="absolute top-6 left-0 bg-slate-800 border border-slate-600 rounded-lg shadow-2xl z-50 w-64 p-3" onClick={e => e.stopPropagation()}>
+          <div className="absolute top-6 left-0 bg-slate-800 border border-slate-600 rounded-lg shadow-2xl z-[60] w-64 p-3" onClick={e => e.stopPropagation()}>
             <div className="flex items-center bg-slate-900 border border-slate-700 rounded p-1 mb-2">
               <Search size={12} className="mx-1 text-slate-500"/><input className="bg-transparent text-xs text-white outline-none w-full" placeholder="Buscar..." value={term} onChange={e => setTerm(e.target.value)} autoFocus/>
             </div>
@@ -200,9 +245,10 @@ const Assets = () => {
         <div className="flex items-center bg-slate-900 border border-slate-700 rounded p-3 focus-within:border-blue-500">
           <Search size={16} className="text-slate-500 mr-2"/>
           <input className="bg-transparent outline-none text-white text-sm w-full" placeholder="Escribir nombre..." value={selectedUser && !showUserSuggestions ? `${selectedUser.nombre} ${selectedUser.apellido}` : userSearchTerm} onChange={e => { setUserSearchTerm(e.target.value); setShowUserSuggestions(true); }} onBlur={() => setTimeout(() => setShowUserSuggestions(false), 200)}/>
+          {value && <button onClick={() => {onChange(''); setUserSearchTerm('')}} className="text-slate-500 hover:text-white ml-2"><X size={14}/></button>}
         </div>
         {showUserSuggestions && userSearchTerm && (
-          <div className="absolute top-full left-0 w-full bg-slate-800 border border-slate-700 rounded-lg mt-1 shadow-xl z-50">
+          <div className="absolute top-full left-0 w-full bg-slate-800 border border-slate-700 rounded-lg mt-1 shadow-xl z-[70]">
             {suggestions.map(u => (
               <div key={u._id} className="p-3 hover:bg-blue-600/20 cursor-pointer text-sm" onMouseDown={() => { onChange(u._id); setUserSearchTerm(`${u.nombre} ${u.apellido}`); setShowUserSuggestions(false); }}>
                 {u.nombre} {u.apellido} <span className="text-slate-500 text-xs">- {u.email}</span>
@@ -226,6 +272,13 @@ const Assets = () => {
     }
   };
 
+  const eliminarMasivo = async () => { 
+    if (!window.confirm(`¿Borrar ${seleccionados.length}?`)) return; 
+    await axios.post('http://localhost:5000/api/assets/bulk-delete', { ids: seleccionados }); 
+    setSeleccionados([]); 
+    cargarDatos(); 
+  };
+
   return (
     <div className="p-8 pb-24 text-slate-200">
       {viewMode === 'dashboard' ? (
@@ -246,77 +299,91 @@ const Assets = () => {
             <div className="flex items-center gap-4"><button onClick={handleBackToDashboard} className="p-2 bg-slate-800 rounded-full border border-slate-700 hover:bg-slate-700 transition-colors"><ArrowLeft/></button><h1 className="text-2xl font-bold">{selectedType.nombre}</h1></div>
             <div className="flex gap-2">
               <div className="relative"><Search className="absolute left-3 top-2.5 text-slate-500" size={16}/><input className="bg-slate-800 border border-slate-700 p-2 pl-9 rounded text-sm w-64 outline-none focus:border-blue-500 transition-all" placeholder="Buscar..." value={busquedaGlobal} onChange={e=>setBusquedaGlobal(e.target.value)}/></div>
-              <button onClick={() => {
-                const data = activosFiltrados.map(a => ({ Marca: a.marca, Modelo: a.modelo, 'S/N': a.serialNumber, Usuario: a.usuarioAsignado ? `${a.usuarioAsignado.nombre} ${a.usuarioAsignado.apellido}` : 'Libre', Estado: a.estado, ...a.detallesTecnicos }));
-                const ws = XLSX.utils.json_to_sheet(data);
-                const wb = XLSX.utils.book_new();
-                XLSX.utils.book_append_sheet(wb, ws, "Activos");
-                XLSX.writeFile(wb, `Inv_${selectedType.nombre}.xlsx`);
-              }} className="bg-slate-800 border border-slate-700 p-2 rounded hover:bg-slate-700 hover:text-blue-400 transition-all" title="Exportar Excel"><Download size={18}/></button>
-              <button onClick={() => mostrarFormulario ? resetEstadosFormulario() : prepararCreacion()} className={`px-4 py-2 rounded font-bold text-white transition-all ${mostrarFormulario ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'}`}>{mostrarFormulario ? 'Cancelar' : 'Nuevo'}</button>
+              <button onClick={exportarExcel} className="bg-slate-800 border border-slate-700 p-2 rounded hover:bg-slate-700 hover:text-blue-400 transition-all" title="Exportar Excel"><Download size={18}/></button>
+              
+              {!mostrarFormulario && !modoImportar && (
+                <div className="relative">
+                  <input type="file" accept=".xlsx" onChange={handleFileUpload} className="absolute inset-0 w-full opacity-0 cursor-pointer" />
+                  <button className="bg-slate-800 border border-slate-700 p-2 rounded hover:bg-slate-700 hover:text-green-400 transition-all"><Upload size={18}/></button>
+                </div>
+              )}
+
+              <button onClick={() => mostrarFormulario ? setMostrarFormulario(false) : prepararCreacion()} className={`px-4 py-2 rounded font-bold text-white transition-all ${mostrarFormulario ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'}`}>{mostrarFormulario ? 'Cancelar' : 'Nuevo'}</button>
             </div>
           </div>
 
           {mostrarFormulario && (
             <div className="bg-slate-800 p-6 rounded-xl border border-slate-700 mb-8 shadow-2xl animate-fade-in">
               <h2 className="text-lg font-bold mb-6 border-b border-slate-700 pb-2 flex items-center gap-2">{modoEdicion ? <Pencil size={20} className="text-blue-500"/> : <Plus size={20} className="text-green-500"/>} {modoEdicion ? 'Editar' : 'Registrar'} {selectedType.nombre}</h2>
-              <form onSubmit={handleSubmit}>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {selectedType.campos.map(c => (
-                    <div key={c.nombreEtiqueta}>
-                      <label className="text-[10px] text-slate-400 font-bold uppercase mb-1 block">{c.nombreEtiqueta}</label>
-                      {c.tipoDato === 'usuario_search' ? <UserSearchInput value={nuevoActivo.usuarioAsignado} onChange={id => handleInputChange(c, id)}/> : 
-                       c.tipoDato === 'dropdown' ? (
-                        <select className="w-full bg-slate-900 border border-slate-700 p-3 rounded text-white text-sm outline-none focus:border-blue-500" value={getVal(c)} onChange={e => handleInputChange(c, e.target.value)}>
-                          <option value="">-- Seleccionar --</option>
-                          {c.opciones?.map(op => <option key={op} value={op}>{op}</option>)}
-                        </select>
-                       ) : <input className="w-full bg-slate-900 border border-slate-700 p-3 rounded text-white text-sm outline-none focus:border-blue-500" type={c.tipoDato === 'number' ? 'number' : c.tipoDato === 'date' ? 'date' : 'text'} value={getVal(c)} onChange={e => handleInputChange(c, e.target.value)} required={['Marca','Modelo','Serial Number'].includes(c.nombreEtiqueta)}/>}
-                    </div>
-                  ))}
-                </div>
-                <button className="w-full mt-6 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg flex justify-center items-center gap-2 transition-all shadow-lg shadow-blue-900/20"><Save size={18}/> Guardar</button>
+              <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {selectedType.campos?.map((c, i) => (
+                  <div key={i}>
+                    <label className="text-[10px] text-slate-400 font-bold uppercase mb-1 block">{c.nombreEtiqueta}</label>
+                    {c.tipoDato === 'usuario_search' ? <UserSearchInput value={nuevoActivo.usuarioAsignado} onChange={id => handleInputChange(c, id)}/> : 
+                     c.tipoDato === 'dropdown' ? (
+                      <select className="w-full bg-slate-900 border border-slate-700 p-3 rounded text-white text-sm outline-none focus:border-blue-500" value={getFieldValue(c)} onChange={e => handleInputChange(c, e.target.value)}>
+                        <option value="">-- Seleccionar --</option>
+                        {c.opciones?.map(op => <option key={op} value={op}>{op}</option>)}
+                      </select>
+                     ) : <input className="w-full bg-slate-900 border border-slate-700 p-3 rounded text-white text-sm outline-none focus:border-blue-500" type={c.tipoDato === 'number' ? 'number' : c.tipoDato === 'date' ? 'date' : 'text'} value={getFieldValue(c)} onChange={e => handleInputChange(c, e.target.value)} required={['Marca','Modelo','Serial Number'].includes(c.nombreEtiqueta)}/>}
+                  </div>
+                ))}
+                <button className="col-span-1 md:col-span-2 mt-2 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg flex justify-center items-center gap-2 transition-all shadow-lg shadow-blue-900/20"><Save size={18}/> Guardar</button>
               </form>
+            </div>
+          )}
+
+          {modoImportar && (
+            <div className="bg-slate-800 p-6 rounded-xl border-2 border-blue-600 mb-8 animate-fade-in relative z-20">
+              <div className="flex justify-between mb-4"><h2 className="font-bold flex items-center gap-2"><Download/> Importar {selectedType.nombre}</h2><button onClick={() => setModoImportar(false)}><X/></button></div>
+              <div className="overflow-x-auto relative">
+                <table className="w-full text-left text-xs mb-4 min-w-[800px]">
+                  <thead><tr className="bg-slate-900">{headersExcel.map((h, i) => (<th key={i} className="p-2 min-w-[150px] border border-slate-700">
+                    <select className="w-full bg-blue-600 text-white p-1 rounded mb-1" onChange={(e) => setMapeo({...mapeo, [i]: e.target.value})}><option value="">Ignorar</option>
+                      {selectedType.campos.map(c => <option key={c.nombreEtiqueta} value={c.nombreEtiqueta === 'Marca' ? 'marca' : c.nombreEtiqueta === 'Modelo' ? 'modelo' : c.nombreEtiqueta === 'Serial Number' ? 'serialNumber' : c.nombreEtiqueta === 'Estado' ? 'estado' : c.nombreEtiqueta === 'Usuario Asignado' ? 'emailUsuario' : c.nombreEtiqueta}>{c.nombreEtiqueta}</option>)}
+                    </select><div className="text-slate-500 px-1">{h}</div>
+                  </th>))}</tr></thead>
+                </table>
+              </div>
+              <button onClick={finalizarImportacion} disabled={procesando} className="w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded font-bold transition-all">Confirmar e Importar {archivoData.length} registros</button>
             </div>
           )}
 
           <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-visible shadow-xl min-h-[400px]">
             <table className="w-full text-left border-collapse">
-              <thead className="bg-slate-900 text-slate-400 text-[11px] uppercase tracking-wider sticky top-0 z-20">
+              <thead className="bg-slate-900 text-slate-400 text-[11px] uppercase tracking-wider sticky top-0 z-10">
                 <tr>
-                  <th className="p-4 w-12 border-b border-slate-700"><button onClick={handleSelectAll}><CheckSquare size={18} className={seleccionados.length > 0 && seleccionados.length === activosFiltrados.length ? "text-blue-500" : "text-slate-600"}/></button></th>
+                  <th className="p-4 w-12 border-b border-slate-700"><button onClick={() => setSeleccionados(seleccionados.length === activosFiltrados.length ? [] : activosFiltrados.map(a=>a._id))}><CheckSquare size={18} className={seleccionados.length > 0 && seleccionados.length === activosFiltrados.length ? "text-blue-500" : "text-slate-600"}/></button></th>
                   <th className="p-4 w-10 border-b border-slate-700"></th> {/* Nueva columna para el Icono */}
-                  {selectedType.campos.map(c => (
-                    <th key={c.nombreEtiqueta} className="p-4 border-b border-slate-700 text-blue-300">
-                      <div className="flex items-center">{c.nombreEtiqueta} <FilterDropdown colKey={c.nombreEtiqueta}/></div>
-                    </th>
-                  ))}
+                  {selectedType.campos?.map((c, i) => <th key={i} className="p-4 border-b border-slate-700 text-blue-300"><div className="flex items-center">{c.nombreEtiqueta} <FilterDropdown colKey={c.nombreEtiqueta}/></div></th>)}
                   <th className="p-4 border-b border-slate-700 text-right">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-700/50">
-                {activosFiltrados.map((a, i) => (
-                  <tr key={a._id} className={`group hover:bg-slate-700/30 ${seleccionados.includes(a._id) ? 'bg-blue-900/20' : ''} transition-colors`}>
-                    <td className="p-4 text-center"><button onClick={(e) => handleSelectOne(a._id, i, e)}><CheckSquare size={18} className={seleccionados.includes(a._id) ? "text-blue-500" : "text-slate-600"}/></button></td>
-                    <td className="p-4">{getIconForType(selectedType.nombre)}</td> {/* Celda del Icono */}
-                    {selectedType.campos.map(c => {
-                      const val = getVal(c, a);
-                      const display = (c.nombreEtiqueta === 'Usuario Asignado' && a.usuarioAsignado) ? `${a.usuarioAsignado.nombre} ${a.usuarioAsignado.apellido}` : (val || '-');
-                      if (c.nombreEtiqueta === 'Estado') return (
-                        <td key={c.nombreEtiqueta} className="p-4">
-                          <select value={a.estado} onChange={e => axios.put(`http://localhost:5000/api/assets/${a._id}`, { estado: e.target.value }).then(cargarDatos)} className={`bg-transparent border rounded px-1 text-[10px] font-bold outline-none cursor-pointer ${a.estado === 'Disponible' ? 'text-green-400 border-green-500/20' : a.estado === 'Asignado' ? 'text-blue-400 border-blue-500/20' : 'text-yellow-400 border-yellow-500/20'}`}>
-                            <option value="Disponible" className="bg-slate-800">Disponible</option><option value="Asignado" className="bg-slate-800">Asignado</option><option value="Reparación" className="bg-slate-800">Reparación</option><option value="Baja" className="bg-slate-800">Baja</option>
-                          </select>
-                        </td>
-                      );
-                      return <td key={c.nombreEtiqueta} className="p-4 text-xs">{display}</td>;
-                    })}
-                    <td className="p-4 text-right flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => prepararEdicion(a)} className="text-blue-400 p-1 hover:bg-slate-700 rounded transition-all"><Pencil size={16}/></button>
-                      <button onClick={() => { if(window.confirm('¿Borrar?')) axios.delete(`http://localhost:5000/api/assets/${a._id}`).then(cargarDatos); }} className="text-red-400 p-1 hover:bg-slate-700 rounded transition-all"><Trash2 size={16}/></button>
-                    </td>
-                  </tr>
-                ))}
+                {activosFiltrados.length === 0 ? (<tr><td colSpan="100%" className="p-8 text-center text-slate-500">No se encontraron activos.</td></tr>) : (
+                  activosFiltrados.map((a, i) => (
+                    <tr key={a._id} className={`group hover:bg-slate-700/30 ${seleccionados.includes(a._id) ? 'bg-blue-900/20' : ''} transition-colors`}>
+                      <td className="p-4 text-center"><button onClick={(e) => handleSelectOne(a._id, i, e)}><CheckSquare size={18} className={seleccionados.includes(a._id) ? "text-blue-500" : "text-slate-600"}/></button></td>
+                      <td className="p-4">{getIconForType(selectedType.nombre)}</td>
+                      {selectedType.campos?.map((c, i) => {
+                        const val = getVal(c, a);
+                        const display = (c.nombreEtiqueta === 'Usuario Asignado' && a.usuarioAsignado) ? `${a.usuarioAsignado.nombre} ${a.usuarioAsignado.apellido}` : (val || '-');
+                        if (c.nombreEtiqueta === 'Estado') return (
+                          <td key={i} className="p-4">
+                            <select value={a.estado} onChange={e => axios.put(`http://localhost:5000/api/assets/${a._id}`, { estado: e.target.value }).then(cargarDatos)} className={`bg-transparent border rounded px-1 text-[10px] font-bold outline-none cursor-pointer ${a.estado === 'Disponible' ? 'text-green-400 border-green-500/20' : a.estado === 'Asignado' ? 'text-blue-400 border-blue-500/20' : 'text-yellow-400 border-yellow-500/20'}`}>
+                              <option value="Disponible" className="bg-slate-800">Disponible</option><option value="Asignado" className="bg-slate-800">Asignado</option><option value="Reparación" className="bg-slate-800">Reparación</option><option value="Baja" className="bg-slate-800">Baja</option>
+                            </select>
+                          </td>
+                        );
+                        return <td key={i} className="p-4 text-xs">{display}</td>;
+                      })}
+                      <td className="p-4 text-right flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button onClick={() => prepararEdicion(a)} className="text-blue-400 p-1 hover:bg-slate-700 rounded transition-all"><Pencil size={16}/></button>
+                        <button onClick={() => { if(window.confirm('¿Borrar?')) axios.delete(`http://localhost:5000/api/assets/${a._id}`).then(cargarDatos); }} className="text-red-400 p-1 hover:bg-slate-700 rounded transition-all"><Trash2 size={16}/></button>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -324,7 +391,7 @@ const Assets = () => {
           {seleccionados.length > 0 && (
             <div className="fixed bottom-8 left-1/2 -translate-x-1/2 bg-blue-600 text-white px-8 py-4 rounded-full flex gap-6 z-50 shadow-2xl items-center animate-bounce-in">
               <span className="font-bold">{seleccionados.length} Seleccionados</span>
-              <button onClick={() => { if(window.confirm(`¿Borrar ${seleccionados.length} activos?`)) axios.post('http://localhost:5000/api/assets/bulk-delete', { ids: seleccionados }).then(() => { setSeleccionados([]); cargarDatos(); }); }} className="bg-red-500 hover:bg-red-400 px-4 py-1.5 rounded-full font-bold text-sm transition-all shadow-md">Eliminar Todo</button>
+              <button onClick={eliminarMasivo} className="bg-red-500 hover:bg-red-400 px-4 py-1.5 rounded-full font-bold text-sm transition-all shadow-md">Eliminar Todo</button>
               <button onClick={() => setSeleccionados([])} className="hover:rotate-90 transition-all"><X/></button>
             </div>
           )}

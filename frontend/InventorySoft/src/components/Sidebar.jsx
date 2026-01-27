@@ -1,9 +1,9 @@
-import { LayoutDashboard, Package, Users, Settings, LogOut } from 'lucide-react'; // <--- Importamos LogOut
-import { Link, useLocation, useNavigate } from 'react-router-dom'; // <--- Importamos useNavigate
+import { LayoutDashboard, Package, Users, Settings, LogOut } from 'lucide-react'; 
+import { Link, useLocation, useNavigate } from 'react-router-dom'; 
 
 const Sidebar = () => {
   const location = useLocation();
-  const navigate = useNavigate(); // <--- Hook para redirigir
+  const navigate = useNavigate(); 
   
   const menuItems = [
     { icon: <LayoutDashboard size={20}/>, label: 'Dashboard', path: '/' },
@@ -13,16 +13,14 @@ const Sidebar = () => {
   ];
 
   const handleLogout = () => {
-    // 1. Borramos el token y el usuario del navegador
     localStorage.removeItem('token');
     localStorage.removeItem('user');
-    
-    // 2. Redirigimos a la pantalla de Login
     navigate('/login');
   };
 
   return (
-    <div className="h-screen w-64 bg-slate-900 border-r border-slate-700 flex flex-col p-4 fixed top-0 left-0">
+    // AGREGADO z-50 AQUÍ PARA QUE SIEMPRE ESTÉ ENCIMA
+    <div className="h-screen w-64 bg-slate-900 border-r border-slate-700 flex flex-col p-4 fixed top-0 left-0 z-50">
       <div className="text-2xl font-bold mb-10 text-blue-500 tracking-wider">
         Inventory<span className="text-white">Soft</span>
       </div>
@@ -47,7 +45,6 @@ const Sidebar = () => {
         })}
       </nav>
 
-      {/* BOTÓN DE CERRAR SESIÓN */}
       <div className="pt-4 border-t border-slate-800">
         <button 
           onClick={handleLogout}
