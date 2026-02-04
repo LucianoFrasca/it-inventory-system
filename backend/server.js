@@ -35,7 +35,9 @@ app.use('/api/users', usersRouter);
 app.use('/api/assets', assetsRouter); // <--- Middleware agregado
 app.use('/api/auth', authRouter);
 
+
 app.use('/api/users', require('./routes/users'));
+app.use('/api/logs', require('./routes/logRoutes'));
 
 // Ruta base de prueba
 app.get('/', (req, res) => {
