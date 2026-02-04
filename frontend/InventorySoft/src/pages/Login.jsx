@@ -1,31 +1,46 @@
 import { useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
-import { Lock, Mail } from 'lucide-react';
+import { Lock, Mail, AlertCircle } from 'lucide-react';
 
 const Login = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
   const handleLogin = async (e) => {
     e.preventDefault();
+    setError('');
+    setLoading(true);
+
     try {
-      const res = await axios.post('https://itsoft-backend.onrender.com', {
+      // ✅ URL CORREGIDA: Apuntando a /api/auth/login
+      const res = await axios.post('https://itsoft-backend.onrender.com/api/auth/login', {
         email,
         password
       });
 
-      // Guardamos el token en el navegador
+      // Guardar token y usuario
       localStorage.setItem('token', res.data.token);
       localStorage.setItem('user', JSON.stringify(res.data.user));
       
-      // Redirigir al dashboard
+      // Redirigir
       navigate('/');
       
     } catch (err) {
-      setError(err.response?.data?.message || 'Error al conectar');
+      console.error(err);
+      // Mensaje de error más descriptivo
+      if (err.response) {
+          if(err.response.status === 404) setError("Servidor no encontrado (404). Revisa la URL.");
+          else if(err.response.status === 401 || err.response.status === 400) setError("Credenciales incorrectas.");
+          else setError(err.response.data.message || 'Error en el servidor.');
+      } else {
+          setError('Error de conexión. ¿El servidor en Render está despierto?');
+      }
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -40,8 +55,8 @@ const Login = () => {
         </div>
 
         {error && (
-          <div className="bg-red-500/10 border border-red-500/50 text-red-400 p-3 rounded mb-4 text-sm text-center">
-            {error}
+          <div className="bg-red-500/10 border border-red-500/50 text-red-400 p-3 rounded mb-4 text-sm flex items-center gap-2">
+            <AlertCircle size={16}/> {error}
           </div>
         )}
 
@@ -53,7 +68,7 @@ const Login = () => {
               <input 
                 type="email" 
                 className="w-full bg-slate-900 border border-slate-600 rounded p-2.5 pl-10 text-white focus:border-blue-500 outline-none transition-colors"
-                placeholder="admin@empresa.com"
+                placeholder="admin@itsoft.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 required
@@ -76,8 +91,8 @@ const Login = () => {
             </div>
           </div>
 
-          <button className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition-transform active:scale-95">
-            Ingresar al Sistema
+          <button disabled={loading} className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed text-white font-bold py-3 rounded-lg transition-all active:scale-95 flex justify-center">
+            {loading ? 'Ingresando...' : 'Ingresar al Sistema'}
           </button>
         </form>
       </div>
