@@ -26,7 +26,7 @@ router.post('/login', async (req, res) => {
         // Usamos una palabra secreta temporal 'secreto_super_seguro'
         const token = jwt.sign(
             { id: user._id, rol: user.rol }, 
-            process.env.JWT_SECRET || 'secreto_super_seguro', 
+            process.env.JWT_SECRET, 
             { expiresIn: '8h' }
         );
 
