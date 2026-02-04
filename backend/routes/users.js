@@ -15,29 +15,21 @@ const transporter = nodemailer.createTransport({
 
 const generarPassword = () => Math.random().toString(36).slice(-8);
 
-// 1. OBTENER TODOS
-router.get('/', async (req, res) => {
+// Lógica unificada para crear usuario
+const registerController = async (req, res) => {
     try {
-        const users = await User.find().select('-password');
-        res.json(users);
-    } catch (err) {
-        res.status(500).json({ message: err.message });
-    }
-});
-
-// 2. CREAR USUARIO (Lógica corregida: Email solo a Admins)
-router.post('/', async (req, res) => {
-    try {
-        const { nombre, apellido, email, rol, cargo, area, departamento } = req.body;
+        // AHORA LEEMOS TAMBIÉN LA PASSWORD DEL BODY
+        const { nombre, apellido, email, rol, cargo, area, departamento, password } = req.body;
 
         // Validar duplicados
         const existe = await User.findOne({ email });
         if (existe) return res.status(400).json({ message: "El usuario ya existe" });
 
-        // Generamos contraseña (obligatoria para Mongo)
-        const tempPassword = generarPassword();
+        // 1. Usar la contraseña enviada O generar una
+        const passwordFinal = password || generarPassword();
+        
         const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(tempPassword, salt);
+        const hashedPassword = await bcrypt.hash(passwordFinal, salt);
 
         const newUser = new User({
             nombre, apellido, email,
@@ -49,10 +41,10 @@ router.post('/', async (req, res) => {
 
         await newUser.save();
 
-        // --- LÓGICA DE EMAIL CONDICIONAL ---
-        let mensajeRespuesta = "Usuario Estandar creado correctamente (sin acceso al sistema).";
+        // --- LÓGICA DE EMAIL ---
+        let mensajeRespuesta = "Usuario creado correctamente.";
 
-        // SOLO enviamos mail si es ADMINISTRADOR
+        // Intentar enviar email solo si es Admin
         if (rol === 'Administrador') {
             try {
                 await transporter.sendMail({
@@ -63,30 +55,45 @@ router.post('/', async (req, res) => {
                         <h1>Bienvenido al Panel de Administración</h1>
                         <p>Hola ${nombre}, se te ha otorgado acceso administrativo.</p>
                         <p><b>Usuario:</b> ${email}</p>
-                        <p><b>Contraseña Temporal:</b> ${tempPassword}</p>
+                        <p><b>Contraseña:</b> ${passwordFinal}</p>
                         <hr/>
-                        <p>Ingresa en: <a href="http://localhost:5173">InventorySoft Login</a></p>
+                        <p>Ingresa en el sistema para cambiarla.</p>
                     `
                 });
-                console.log(`📧 Email enviado a Admin: ${email}`);
-                mensajeRespuesta = "Administrador creado y credenciales enviadas por email.";
+                mensajeRespuesta = "Administrador creado y credenciales enviadas.";
             } catch (emailError) {
                 console.error("❌ Error enviando email:", emailError);
-                // Si falla, devolvemos la pass en el JSON para que no te quedes trabado
-                return res.status(201).json({ 
-                    message: "Admin creado, pero falló el envío de email.", 
-                    tempPassword: tempPassword, 
-                    user: newUser 
-                });
+                mensajeRespuesta = "Usuario creado, pero falló el envío de email.";
             }
         }
 
-        res.status(201).json({ message: mensajeRespuesta, user: newUser });
+        // DEVOLVEMOS LA PASSWORD EN EL JSON PARA QUE PUEDAS ENTRAR AHORA
+        res.status(201).json({ 
+            message: mensajeRespuesta, 
+            user: newUser,
+            passwordUsed: passwordFinal // <--- ¡AQUÍ VERÁS TU CLAVE!
+        });
 
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
+};
+
+// --- RUTAS ---
+
+// 1. OBTENER TODOS
+router.get('/', async (req, res) => {
+    try {
+        const users = await User.find().select('-password');
+        res.json(users);
+    } catch (err) {
+        res.status(500).json({ message: err.message });
+    }
 });
+
+// 2. CREAR USUARIO (Soporta ambas rutas)
+router.post('/', registerController);       // Para /api/users
+router.post('/register', registerController); // Para /api/users/register
 
 // 3. EDITAR (PUT)
 router.put('/:id', async (req, res) => {
@@ -126,7 +133,7 @@ router.post('/bulk-import', async (req, res) => {
                     cargo: usuario.cargo || '',
                     area: usuario.area || '',
                     departamento: usuario.departamento || '',
-                    password: defaultPassword, // Pass genérica, total no entran
+                    password: defaultPassword,
                     activosAsignados: []
                 }).save();
                 creados++;
