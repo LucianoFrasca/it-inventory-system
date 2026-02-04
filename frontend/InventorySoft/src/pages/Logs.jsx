@@ -1,20 +1,28 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import axios from 'axios';
 import { ArrowLeft, Activity, Search, Filter } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-
-// DUMMY DATA PARA VISUALIZACIÓN
-const MOCK_LOGS = [
-    { id: 1, accion: 'Asignación', activo: 'Dell Latitude 5420', serial: 'HK992L', usuario: 'Juan Perez', fecha: '29/01/2024 10:30', detalle: 'Nuevo ingreso' },
-    { id: 2, accion: 'Devolución', activo: 'Auriculares Logitech', serial: 'STK-001', usuario: 'Ana Gomez', fecha: '28/01/2024 15:45', detalle: 'Renuncia' },
-    { id: 3, accion: 'Baja', activo: 'Monitor Samsung 24"', serial: 'MN-221', usuario: 'Carlos Ruiz', fecha: '28/01/2024 09:00', detalle: 'Pantalla rota' },
-    { id: 4, accion: 'Creación', activo: 'MacBook Pro M1', serial: 'APPLE-X1', usuario: 'Sistema', fecha: '27/01/2024 18:20', detalle: 'Compra nueva' },
-    { id: 5, accion: 'Asignación', activo: 'Mouse Genius', serial: 'STK-005', usuario: 'Sofia Lopez', fecha: '27/01/2024 11:15', detalle: 'Reemplazo' },
-];
 
 const Logs = () => {
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
-  const [logs, setLogs] = useState(MOCK_LOGS);
+  const [logs, setLogs] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  // --- CARGA DE DATOS REALES ---
+  useEffect(() => {
+    const fetchLogs = async () => {
+        try {
+            const res = await axios.get('http://localhost:5000/api/logs');
+            setLogs(res.data);
+        } catch (error) {
+            console.error("Error cargando logs:", error);
+        } finally {
+            setLoading(false);
+        }
+    };
+    fetchLogs();
+  }, []);
 
   return (
     <div className="p-8 text-slate-200 animate-fade-in">
@@ -54,32 +62,39 @@ const Logs = () => {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-700/50">
-            {logs.filter(l => JSON.stringify(l).toLowerCase().includes(searchTerm.toLowerCase())).map(log => (
-                <tr key={log.id} className="hover:bg-slate-700/30 transition-colors">
-                    <td className="p-4">
-                        <span className={`text-xs font-bold px-2 py-1 rounded uppercase ${
-                            log.accion === 'Asignación' ? 'bg-green-900/30 text-green-400' : 
-                            log.accion === 'Baja' ? 'bg-red-900/30 text-red-400' : 
-                            log.accion === 'Devolución' ? 'bg-blue-900/30 text-blue-400' : 'bg-slate-700 text-slate-300'
-                        }`}>
-                            {log.accion}
-                        </span>
-                    </td>
-                    <td className="p-4">
-                        <div className="font-bold text-white">{log.activo}</div>
-                        <div className="text-xs text-slate-500 font-mono">{log.serial}</div>
-                    </td>
-                    <td className="p-4 text-slate-300">
-                        {log.usuario}
-                    </td>
-                    <td className="p-4 text-sm text-slate-400 italic">
-                        {log.detalle}
-                    </td>
-                    <td className="p-4 text-xs text-slate-500">
-                        {log.fecha}
-                    </td>
-                </tr>
-            ))}
+            {loading ? (
+                <tr><td colSpan="5" className="p-8 text-center text-slate-500 italic">Cargando historial...</td></tr>
+            ) : logs.length === 0 ? (
+                <tr><td colSpan="5" className="p-8 text-center text-slate-500 italic">No hay registros de actividad aún.</td></tr>
+            ) : (
+                logs.filter(l => JSON.stringify(l).toLowerCase().includes(searchTerm.toLowerCase())).map(log => (
+                    <tr key={log._id} className="hover:bg-slate-700/30 transition-colors">
+                        <td className="p-4">
+                            <span className={`text-xs font-bold px-2 py-1 rounded uppercase ${
+                                log.accion === 'Asignación' ? 'bg-green-900/30 text-green-400' : 
+                                log.accion === 'Baja' ? 'bg-red-900/30 text-red-400' : 
+                                log.accion === 'Devolución' ? 'bg-blue-900/30 text-blue-400' : 
+                                log.accion === 'Creación' ? 'bg-purple-900/30 text-purple-400' : 'bg-slate-700 text-slate-300'
+                            }`}>
+                                {log.accion}
+                            </span>
+                        </td>
+                        <td className="p-4">
+                            <div className="font-bold text-white">{log.activo}</div>
+                            <div className="text-xs text-slate-500 font-mono">{log.serial || '-'}</div>
+                        </td>
+                        <td className="p-4 text-slate-300">
+                            {log.usuario}
+                        </td>
+                        <td className="p-4 text-sm text-slate-400 italic">
+                            {log.detalles || '-'}
+                        </td>
+                        <td className="p-4 text-xs text-slate-500">
+                             {new Date(log.fecha).toLocaleString()}
+                        </td>
+                    </tr>
+                ))
+            )}
           </tbody>
         </table>
       </div>

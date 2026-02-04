@@ -61,13 +61,15 @@ const Assets = () => {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // --- CORRECCIÓN FLICKEO: Loading inicial ---
   const [loading, setLoading] = useState(true); 
   const [viewMode, setViewMode] = useState('dashboard'); 
   const [selectedType, setSelectedType] = useState(null);
   const [activos, setActivos] = useState([]);
   const [tiposActivos, setTiposActivos] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
+
+  // --- NUEVO: REGLAS EXTERNAS DEL DASHBOARD ---
+  const [externalRules, setExternalRules] = useState([]); 
 
   // UI & Filtros
   const [busquedaGlobal, setBusquedaGlobal] = useState('');
@@ -98,7 +100,6 @@ const Assets = () => {
 
   useEffect(() => { cargarDatos(); }, []);
 
-  // --- CARGA DE DATOS + NAVEGACIÓN INSTANTÁNEA ---
   const cargarDatos = async () => {
     try {
       const [resA, resT, resU] = await Promise.all([
@@ -110,22 +111,56 @@ const Assets = () => {
       setTiposActivos(resT.data || []);
       setUsuarios(resU.data || []);
 
-      // Verificamos si venimos del Dashboard JUSTO AHORA (antes de dejar de cargar)
+      // 1. Detección de navegación desde Dashboard (Tipo + Reglas)
       if (location.state?.preSelectedTypeId) {
           const tipoEncontrado = resT.data.find(t => t._id === location.state.preSelectedTypeId);
           if (tipoEncontrado) {
               setSelectedType(tipoEncontrado);
-              setViewMode('list'); 
-              // Limpiamos el historial para que si recarga no se quede pegado
+              setViewMode('list');
+              
+              // Si vienen reglas personalizadas, las aplicamos
+              if (location.state.customRules) {
+                  setExternalRules(location.state.customRules);
+              }
+              
+              // Limpiamos historial
               window.history.replaceState({}, document.title);
           }
       }
 
     } catch (e) { console.error("Error cargando datos:", e); } 
-    finally { setLoading(false); } // Solo aquí mostramos la interfaz
+    finally { setLoading(false); } 
   };
 
-  // --- LOGICA DE BOTONES ---
+  // --- LÓGICA DE FILTRADO AVANZADO (Copia adaptada del Dashboard) ---
+  const obtenerValor = (activo, campoKey) => {
+      if (campoKey === 'usuario') return activo.usuarioAsignado ? `${activo.usuarioAsignado.nombre} ${activo.usuarioAsignado.apellido}` : '';
+      if (campoKey.startsWith('dt_')) {
+          const keyReal = campoKey.replace('dt_', '');
+          return activo.detallesTecnicos?.[keyReal] || '';
+      }
+      return activo[campoKey] || '';
+  };
+
+  const cumpleReglasExternas = (activo) => {
+      if (externalRules.length === 0) return true;
+      return externalRules.every(regla => {
+          const valorReal = String(obtenerValor(activo, regla.campo)).toLowerCase();
+          const valorFiltro = String(regla.valor).toLowerCase();
+
+          switch (regla.operador) {
+              case 'contiene': return valorReal.includes(valorFiltro);
+              case 'igual': return valorReal === valorFiltro;
+              case 'no_contiene': return !valorReal.includes(valorFiltro);
+              case 'mayor': return parseFloat(valorReal) > parseFloat(valorFiltro);
+              case 'menor': return parseFloat(valorReal) < parseFloat(valorFiltro);
+              case 'fecha_mayor': return valorReal > valorFiltro;
+              case 'fecha_menor': return valorReal < valorFiltro;
+              default: return true;
+          }
+      });
+  };
+
   const prepararCreacion = () => {
     setModoEdicion(false);
     setIdEdicion(null);
@@ -138,7 +173,6 @@ const Assets = () => {
     setIdEdicion(a._id);
     setModoEdicion(true);
     
-    // Poblado inteligente de datos
     const datosPrellenos = {};
     if (a.marca) datosPrellenos['Marca'] = a.marca;
     if (a.modelo) datosPrellenos['Modelo'] = a.modelo;
@@ -217,18 +251,27 @@ const Assets = () => {
     return activos.filter(a => {
         const esDelTipo = String(a.tipo?._id || a.tipo) === String(selectedType._id);
         const tieneStock = selectedType.campos.some(c => c.nombreEtiqueta === 'Stock');
-        if (tieneStock) return esDelTipo && !a.usuarioAsignado;
+        
+        // Si hay reglas externas (filtros avanzados), NO ocultamos items asignados
+        // para que el usuario pueda ver "qué usuario tiene X cosa"
+        if (tieneStock && externalRules.length === 0) return esDelTipo && !a.usuarioAsignado;
+        
         return esDelTipo;
     });
-  }, [activos, selectedType]);
+  }, [activos, selectedType, externalRules]);
 
   const activosFiltrados = useMemo(() => {
     return baseAssets.filter(a => {
+      // 1. Filtro Reglas Externas (Dashboard)
+      if (!cumpleReglasExternas(a)) return false;
+
+      // 2. Filtro Busqueda Global
       const nombreUsuario = a.usuarioAsignado ? `${a.usuarioAsignado.nombre} ${a.usuarioAsignado.apellido}` : 'Sin Asignar';
       const content = `${a.marca || ''} ${a.modelo || ''} ${a.serialNumber || ''} ${nombreUsuario} ${JSON.stringify(a.detallesTecnicos || {})}`;
       
       if (busquedaGlobal && !normalizarTexto(content).includes(normalizarTexto(busquedaGlobal))) return false;
 
+      // 3. Filtros Dropdown
       for (const colKey in activeFilters) {
         const filters = activeFilters[colKey];
         if (filters.length === 0) return false;
@@ -237,7 +280,7 @@ const Assets = () => {
       }
       return true;
     });
-  }, [baseAssets, busquedaGlobal, activeFilters]);
+  }, [baseAssets, busquedaGlobal, activeFilters, externalRules]);
 
   const modelosConStock = useMemo(() => {
     if (!selectedType) return [];
@@ -262,7 +305,7 @@ const Assets = () => {
 
   const handleBackToDashboard = () => {
     if (mostrarFormulario) setMostrarFormulario(false);
-    else { setViewMode('dashboard'); setSelectedType(null); setModoImportar(false); setSeleccionados([]); }
+    else { setViewMode('dashboard'); setSelectedType(null); setModoImportar(false); setSeleccionados([]); setExternalRules([]); }
   };
 
   const getIcon = (name) => {
@@ -426,11 +469,16 @@ const Assets = () => {
             <div className="flex items-center gap-4">
               <button onClick={handleBackToDashboard} className="p-2 bg-slate-800 rounded-full border border-slate-700 hover:bg-slate-700 transition-all shadow-md"><ArrowLeft size={20}/></button>
               <h1 className="text-2xl font-bold text-white">{selectedType?.nombre}</h1>
+              {externalRules.length > 0 && (
+                  <div className="flex items-center gap-2 bg-blue-900/40 border border-blue-500/50 px-3 py-1 rounded-full animate-fade-in">
+                      <span className="text-xs text-blue-300 font-bold">⚠️ Filtro Activo: {externalRules.length} Reglas</span>
+                      <button onClick={() => setExternalRules([])} className="text-blue-300 hover:text-white"><X size={14}/></button>
+                  </div>
+              )}
             </div>
             <div className="flex gap-2">
               <div className="relative"><Search className="absolute left-3 top-2.5 text-slate-500" size={16}/><input className="bg-slate-800 border border-slate-700 p-2 pl-9 rounded text-sm w-64 outline-none focus:border-blue-500 transition-all" placeholder="Buscar..." value={busquedaGlobal} onChange={e=>setBusquedaGlobal(e.target.value)}/></div>
               
-              {/* BOTÓN ASIGNAR STOCK GENERAL */}
               {selectedType?.campos.some(c => c.nombreEtiqueta === 'Stock') && (
                   <button onClick={abrirModalStockGeneral} className="bg-green-600 hover:bg-green-500 text-white px-4 py-2 rounded flex items-center gap-2 font-bold transition-all shadow-md active:scale-95">
                     <Share size={18}/> Asignar Stock
@@ -467,7 +515,13 @@ const Assets = () => {
                         <option value="">-- Seleccionar --</option>
                         {c.opciones?.map(op => <option key={op} value={op}>{op}</option>)}
                       </select>
-                     ) : <input className="w-full bg-slate-900 border border-slate-700 p-3 rounded text-white text-sm outline-none focus:border-blue-500 transition-all" type={c.tipoDato === 'number' || c.nombreEtiqueta === 'Stock' ? 'number' : 'text'} value={getFieldValue(c)} onChange={e => handleInputChange(c, e.target.value)} required={['Marca','Modelo'].includes(c.nombreEtiqueta)}/>}
+                     ) : <input 
+                            className="w-full bg-slate-900 border border-slate-700 p-3 rounded text-white text-sm outline-none focus:border-blue-500 transition-all" 
+                            type={c.tipoDato === 'number' || c.nombreEtiqueta === 'Stock' ? 'number' : c.tipoDato === 'date' ? 'date' : 'text'} 
+                            value={getFieldValue(c)} 
+                            onChange={e => handleInputChange(c, e.target.value)} 
+                            required={['Marca','Modelo'].includes(c.nombreEtiqueta)}
+                        />}
                   </div>
                 ))}
                 <button className="col-span-1 md:col-span-2 mt-2 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-lg flex justify-center items-center gap-2 transition-all shadow-lg active:scale-95"><Save size={18}/> Guardar</button>
@@ -550,7 +604,7 @@ const Assets = () => {
                       <td className="p-4 text-center"><button onClick={(e) => handleSelectOne(a._id, i, e)} className="hover:text-blue-400 transition-colors"><CheckSquare size={18} className={seleccionados.includes(a._id) ? "text-blue-500" : "text-slate-600"}/></button></td>
                       <td className="p-4 group-hover:scale-110 transition-transform">{getIcon(selectedType?.nombre)}</td>
                       {selectedType?.campos?.map((c, idx) => {
-                        const display = getFieldValue(c, a); // USAMOS LA FUNCIÓN CORREGIDA
+                        const display = getFieldValue(c, a);
                         
                         if (c.nombreEtiqueta === 'Stock') return <td key={idx} className="p-4"><span className="bg-green-900/30 text-green-400 px-2 py-1 rounded font-mono font-bold text-xs">{display} Unidades</span></td>;
 
