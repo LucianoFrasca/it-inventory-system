@@ -38,9 +38,9 @@ const Dashboard = () => {
     const cargarDatos = async () => {
       try {
         const [resA, resT, resL] = await Promise.all([
-          axios.get('http://localhost:5000/api/assets'),
-          axios.get('http://localhost:5000/api/asset-types'),
-          axios.get('http://localhost:5000/api/logs') 
+          axios.get('https://itsoft-backend.onrender.com/api/assets'),
+          axios.get('https://itsoft-backend.onrender.com/api/asset-types'),
+          axios.get('https://itsoft-backend.onrender.com/api/logs') 
         ]);
         setActivos(resA.data);
         setTipos(resT.data);

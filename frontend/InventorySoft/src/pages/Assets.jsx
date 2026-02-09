@@ -103,9 +103,9 @@ const Assets = () => {
   const cargarDatos = async () => {
     try {
       const [resA, resT, resU] = await Promise.all([
-        axios.get('http://localhost:5000/api/assets'),
-        axios.get('http://localhost:5000/api/asset-types'),
-        axios.get('http://localhost:5000/api/users')
+        axios.get('https://itsoft-backend.onrender.com/api/assets'),
+        axios.get('https://itsoft-backend.onrender.com/api/asset-types'),
+        axios.get('https://itsoft-backend.onrender.com/api/users')
       ]);
       setActivos(resA.data || []);
       setTiposActivos(resT.data || []);
@@ -231,12 +231,12 @@ const Assets = () => {
             'Fecha Asignación': asignacionData.fecha
         }
       };
-      await axios.post('http://localhost:5000/api/assets', nuevoActivoUsuario);
+      await axios.post('https://itsoft-backend.onrender.com/api/assets', nuevoActivoUsuario);
 
       const stockActual = parseInt(stockItem.detallesTecnicos['Stock'] || 0);
       const nuevoStock = Math.max(0, stockActual - 1);
       
-      await axios.put(`http://localhost:5000/api/assets/${stockItem._id}`, {
+      await axios.put(`https://itsoft-backend.onrender.com/api/assets/${stockItem._id}`, {
           detallesTecnicos: { ...stockItem.detallesTecnicos, 'Stock': nuevoStock }
       });
 
@@ -361,8 +361,8 @@ const Assets = () => {
     };
 
     try {
-      if (modoEdicion) await axios.put(`http://localhost:5000/api/assets/${idEdicion}`, body);
-      else await axios.post('http://localhost:5000/api/assets', body);
+      if (modoEdicion) await axios.put(`https://itsoft-backend.onrender.com/api/assets/${idEdicion}`, body);
+      else await axios.post('https://itsoft-backend.onrender.com/api/assets', body);
       setMostrarFormulario(false); cargarDatos();
     } catch (e) { alert("Error al guardar: " + (e.response?.data?.message || e.message)); }
   };
@@ -400,7 +400,7 @@ const Assets = () => {
       return obj;
     });
     try {
-      await axios.post('http://localhost:5000/api/assets/bulk-import', { tipoId: selectedType._id, activos: data });
+      await axios.post('https://itsoft-backend.onrender.com/api/assets/bulk-import', { tipoId: selectedType._id, activos: data });
       setModoImportar(false); cargarDatos();
     } catch (e) { alert("Error importación"); } finally { setProcesando(false); }
   };
@@ -610,7 +610,7 @@ const Assets = () => {
 
                         if (c.nombreEtiqueta === 'Estado') return (
                           <td key={idx} className="p-4">
-                            <select value={a.estado} onChange={e => axios.put(`http://localhost:5000/api/assets/${a._id}`, { estado: e.target.value }).then(cargarDatos)} className={`bg-transparent border rounded px-1 text-[10px] font-bold outline-none cursor-pointer transition-all ${a.estado === 'Disponible' ? 'text-green-400 border-green-500/20 hover:bg-green-500/10' : 'text-yellow-400 border-yellow-500/20 hover:bg-yellow-500/10'}`}>
+                            <select value={a.estado} onChange={e => axios.put(`https://itsoft-backend.onrender.com/api/assets/${a._id}`, { estado: e.target.value }).then(cargarDatos)} className={`bg-transparent border rounded px-1 text-[10px] font-bold outline-none cursor-pointer transition-all ${a.estado === 'Disponible' ? 'text-green-400 border-green-500/20 hover:bg-green-500/10' : 'text-yellow-400 border-yellow-500/20 hover:bg-yellow-500/10'}`}>
                               <option value="Disponible">Disponible</option><option value="Asignado">Asignado</option><option value="Reparación">Reparación</option><option value="Baja">Baja</option>
                             </select>
                           </td>
@@ -624,7 +624,7 @@ const Assets = () => {
                             </button>
                         )}
                         <button onClick={() => prepararEdicion(a)} className="text-blue-400 p-1 hover:bg-slate-700 rounded-md transition-all hover:scale-110"><Pencil size={16}/></button>
-                        <button onClick={() => { if(window.confirm('¿Borrar activo?')) axios.delete(`http://localhost:5000/api/assets/${a._id}`).then(cargarDatos); }} className="text-red-400 p-1 hover:bg-slate-700 rounded-md transition-all hover:scale-110"><Trash2 size={16}/></button>
+                        <button onClick={() => { if(window.confirm('¿Borrar activo?')) axios.delete(`https://itsoft-backend.onrender.com/api/assets/${a._id}`).then(cargarDatos); }} className="text-red-400 p-1 hover:bg-slate-700 rounded-md transition-all hover:scale-110"><Trash2 size={16}/></button>
                       </td>
                     </tr>
                   ))

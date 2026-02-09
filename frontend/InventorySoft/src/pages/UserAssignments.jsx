@@ -23,7 +23,7 @@ const UserAssignments = () => {
 
   const cargarUsuarios = async () => {
     try {
-      const res = await axios.get('http://localhost:5000/api/users');
+      const res = await axios.get('https://itsoft-backend.onrender.com/api/users');
       setUsuarios(res.data);
     } catch (e) { console.error(e); }
   };
@@ -31,7 +31,7 @@ const UserAssignments = () => {
   const verPerfil = async (user) => {
     setSelectedUser(user);
     try {
-      const res = await axios.get('http://localhost:5000/api/assets');
+      const res = await axios.get('https://itsoft-backend.onrender.com/api/assets');
       const asignados = res.data.filter(a => (a.usuarioAsignado?._id || a.usuarioAsignado) === user._id && a.estado !== 'Baja');
       setUserAssets(asignados);
       setViewMode('profile');
@@ -42,18 +42,18 @@ const UserAssignments = () => {
     if (!window.confirm("¿Confirmar devolución?")) return;
     try {
         // Verificar si es consumible (tiene Stock maestro)
-        const res = await axios.get('http://localhost:5000/api/assets');
+        const res = await axios.get('https://itsoft-backend.onrender.com/api/assets');
         const modeloMaestro = res.data.find(a => a.marca === selectedAsset.marca && a.modelo === selectedAsset.modelo && a.detallesTecnicos.hasOwnProperty('Stock'));
 
         if (modeloMaestro) {
             const stockActual = parseInt(modeloMaestro.detallesTecnicos['Stock'] || 0);
-            await axios.put(`http://localhost:5000/api/assets/${modeloMaestro._id}`, {
+            await axios.put(`https://itsoft-backend.onrender.com/api/assets/${modeloMaestro._id}`, {
                 detallesTecnicos: { ...modeloMaestro.detallesTecnicos, 'Stock': stockActual + 1 }
             });
-            await axios.delete(`http://localhost:5000/api/assets/${selectedAsset._id}`);
+            await axios.delete(`https://itsoft-backend.onrender.com/api/assets/${selectedAsset._id}`);
         } else {
             // Si no es consumible, solo le quitamos el usuario
-            await axios.put(`http://localhost:5000/api/assets/${selectedAsset._id}`, { 
+            await axios.put(`https://itsoft-backend.onrender.com/api/assets/${selectedAsset._id}`, { 
                 usuarioAsignado: null, 
                 estado: 'Disponible' 
             });
@@ -67,7 +67,7 @@ const UserAssignments = () => {
   const handleBaja = async () => {
       if (!motivoBaja) return alert("Escribe el motivo");
       try {
-          await axios.put(`http://localhost:5000/api/assets/${selectedAsset._id}`, {
+          await axios.put(`https://itsoft-backend.onrender.com/api/assets/${selectedAsset._id}`, {
               estado: 'Baja',
               detallesTecnicos: { ...selectedAsset.detallesTecnicos, 'Motivo Baja': motivoBaja, 'Fecha Baja': new Date().toISOString().split('T')[0] }
           });
@@ -149,7 +149,7 @@ const UserAssignments = () => {
                                 <button onClick={() => { 
                                     // Para laptops, comportamiento "Lápiz" (Editar/Desvincular rápido)
                                     if(window.confirm("¿Desvincular este activo del usuario?")) {
-                                        axios.put(`http://localhost:5000/api/assets/${a._id}`, { usuarioAsignado: null, estado: 'Disponible' }).then(() => verPerfil(selectedUser));
+                                        axios.put(`https://itsoft-backend.onrender.com/api/assets/${a._id}`, { usuarioAsignado: null, estado: 'Disponible' }).then(() => verPerfil(selectedUser));
                                     }
                                 }} className="p-2 bg-blue-600/20 text-blue-400 hover:bg-blue-600 hover:text-white rounded-lg transition-all">
                                   <Pencil size={18}/>

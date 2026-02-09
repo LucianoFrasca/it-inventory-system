@@ -13,7 +13,7 @@ const Logs = () => {
   useEffect(() => {
     const fetchLogs = async () => {
         try {
-            const res = await axios.get('http://localhost:5000/api/logs');
+            const res = await axios.get('https://itsoft-backend.onrender.com/api/logs');
             setLogs(res.data);
         } catch (error) {
             console.error("Error cargando logs:", error);

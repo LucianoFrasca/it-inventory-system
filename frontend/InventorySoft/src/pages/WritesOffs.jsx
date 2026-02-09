@@ -12,7 +12,7 @@ const WriteOffs = () => {
 
   const cargarBajas = async () => {
     try {
-      const res = await axios.get('http://localhost:5000/api/assets');
+      const res = await axios.get('https://itsoft-backend.onrender.com/api/assets');
       // Filtramos solo los que tengan estado "Baja"
       const filtrados = res.data.filter(a => a.estado === 'Baja');
       setBajas(filtrados);

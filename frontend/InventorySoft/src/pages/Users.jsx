@@ -47,7 +47,7 @@ const Users = () => {
 
   const cargarUsuarios = async () => {
     try {
-      const res = await axios.get('http://localhost:5000/api/users');
+      const res = await axios.get('https://itsoft-backend.onrender.com/api/users');
       setUsuarios(res.data);
     } catch (error) { console.error(error); }
   };
@@ -77,7 +77,7 @@ const Users = () => {
   const eliminarMasivo = async () => {
     if (!window.confirm(`¿Eliminar ${seleccionados.length} usuarios?`)) return;
     try {
-      await axios.post('http://localhost:5000/api/users/bulk-delete', { ids: seleccionados });
+      await axios.post('https://itsoft-backend.onrender.com/api/users/bulk-delete', { ids: seleccionados });
       alert('Usuarios eliminados');
       setSeleccionados([]);
       cargarUsuarios();
@@ -117,10 +117,10 @@ const Users = () => {
     e.preventDefault();
     try {
       if (modoEdicion) {
-        await axios.put(`http://localhost:5000/api/users/${idEdicion}`, nuevoUsuario);
+        await axios.put(`https://itsoft-backend.onrender.com/api/users/${idEdicion}`, nuevoUsuario);
         alert('Usuario actualizado correctamente');
       } else {
-        const res = await axios.post('http://localhost:5000/api/users', nuevoUsuario);
+        const res = await axios.post('https://itsoft-backend.onrender.com/api/users', nuevoUsuario);
         if (res.data.tempPassword) {
             // Solo mostramos pass si el backend la devolvió (significa que el email falló o es admin)
             alert(`Usuario Admin creado.\n⚠️ Email falló. Pass temporal: ${res.data.tempPassword}`);
@@ -153,7 +153,7 @@ const Users = () => {
       let obj = {}; Object.keys(mapeo).forEach(k => obj[mapeo[k]] = row[k]); return obj;
     });
     try {
-        const res = await axios.post('http://localhost:5000/api/users/bulk-import', data);
+        const res = await axios.post('https://itsoft-backend.onrender.com/api/users/bulk-import', data);
         
         if (res.data.detalles && res.data.detalles.length > 0) {
             alert(`${res.data.message}\n\n--- DETALLES ---\n${res.data.detalles.join('\n')}`);

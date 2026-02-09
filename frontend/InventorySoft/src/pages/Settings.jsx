@@ -54,7 +54,7 @@ const Settings = () => {
 
     try {
         // 1. Cargar Tipos de Activos
-        const resTipos = await axios.get('http://localhost:5000/api/asset-types');
+        const resTipos = await axios.get('https://itsoft-backend.onrender.com/api/asset-types');
         if (Array.isArray(resTipos.data)) setTipos(resTipos.data);
 
         // 2. Cargar Perfil del Usuario Real
@@ -65,7 +65,7 @@ const Settings = () => {
         // (Esto asume que tienes un endpoint para obtener el usuario actual o un ID guardado)
         const storedUser = JSON.parse(localStorage.getItem('user')); 
         if (storedUser && storedUser.id) {
-             const resUser = await axios.get(`http://localhost:5000/api/users/${storedUser.id}`);
+             const resUser = await axios.get(`https://itsoft-backend.onrender.com/api/users/${storedUser.id}`);
              setUserData(resUser.data);
         } else {
             // Fallback si no hay ID guardado, usamos datos del localStorage directo
@@ -105,7 +105,7 @@ const Settings = () => {
     try {
         const storedUser = JSON.parse(localStorage.getItem('user'));
         if (storedUser && storedUser.id) {
-            await axios.put(`http://localhost:5000/api/users/${storedUser.id}`, userData);
+            await axios.put(`https://itsoft-backend.onrender.com/api/users/${storedUser.id}`, userData);
             // Actualizar localStorage también
             localStorage.setItem('user', JSON.stringify({ ...storedUser, ...userData }));
             mostrarMensaje('success', 'Perfil actualizado correctamente.');
@@ -157,11 +157,11 @@ const Settings = () => {
 
         if (idEdicionTipo) {
             // MODO EDICIÓN (PUT)
-            await axios.put(`http://localhost:5000/api/asset-types/${idEdicionTipo}`, payload);
+            await axios.put(`https://itsoft-backend.onrender.com/api/asset-types/${idEdicionTipo}`, payload);
             mostrarMensaje('success', `Tipo "${nuevoTipo}" actualizado.`);
         } else {
             // MODO CREACIÓN (POST)
-            await axios.post('http://localhost:5000/api/asset-types', payload);
+            await axios.post('https://itsoft-backend.onrender.com/api/asset-types', payload);
             mostrarMensaje('success', `Tipo "${nuevoTipo}" creado.`);
         }
 
@@ -169,7 +169,7 @@ const Settings = () => {
         cancelarEdicion();
         
         // Recargar lista
-        const res = await axios.get('http://localhost:5000/api/asset-types');
+        const res = await axios.get('https://itsoft-backend.onrender.com/api/asset-types');
         setTipos(res.data);
 
     } catch (e) {
@@ -181,8 +181,8 @@ const Settings = () => {
   const eliminarTipo = async (id) => {
       if(!window.confirm("¿Estás seguro? Se perderá la configuración de campos.")) return;
       try {
-          await axios.delete(`http://localhost:5000/api/asset-types/${id}`);
-          const res = await axios.get('http://localhost:5000/api/asset-types');
+          await axios.delete(`https://itsoft-backend.onrender.com/api/asset-types/${id}`);
+          const res = await axios.get('https://itsoft-backend.onrender.com/api/asset-types');
           setTipos(res.data);
           mostrarMensaje('success', 'Tipo eliminado.');
       } catch (e) { console.error(e); }
