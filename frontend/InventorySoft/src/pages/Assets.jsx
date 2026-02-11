@@ -8,7 +8,7 @@ import {
   Download, Upload, Check, Filter, ArrowLeft, X, Save, User,
   Laptop, Smartphone, Monitor, Tablet, MousePointer2, HardDrive, Headphones, Cpu, Box, Share, AlertCircle
 } from 'lucide-react';
-import QuickAdd from './pages/QuickAdd';
+
 
 const normalizarTexto = (texto) => {
     return texto ? String(texto).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase() : "";
