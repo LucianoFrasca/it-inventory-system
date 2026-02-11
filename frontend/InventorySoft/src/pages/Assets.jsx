@@ -6,9 +6,14 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { 
   Plus, Search, Package, Pencil, Trash2, CheckSquare, Square, 
   Download, Upload, Check, Filter, ArrowLeft, X, Save, User,
-  Laptop, Smartphone, Monitor, Tablet, MousePointer2, HardDrive, Headphones, Cpu, Box, Share, AlertCircle
+  Laptop, Smartphone, Monitor, Tablet, MousePointer2, HardDrive, Headphones, Cpu, Box, Share, AlertCircle, Eye
 } from 'lucide-react';
+import ImportModal from '../components/ImportModal';
 
+// URL del Backend (Dinámico)
+const API_URL = window.location.hostname.includes('localhost') 
+  ? 'http://localhost:5000/api' 
+  : 'https://itsoft-backend.onrender.com/api';
 
 const normalizarTexto = (texto) => {
     return texto ? String(texto).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase() : "";
@@ -56,7 +61,7 @@ const UserSearchInput = ({ value, onChange, placeholder = "Buscar usuario...", u
         )}
       </div>
     );
-  };
+};
 
 const Assets = () => {
   const navigate = useNavigate();
@@ -69,7 +74,7 @@ const Assets = () => {
   const [tiposActivos, setTiposActivos] = useState([]);
   const [usuarios, setUsuarios] = useState([]);
 
-  // --- NUEVO: REGLAS EXTERNAS DEL DASHBOARD ---
+  // --- REGLAS EXTERNAS DEL DASHBOARD ---
   const [externalRules, setExternalRules] = useState([]); 
 
   // UI & Filtros
@@ -92,48 +97,54 @@ const Assets = () => {
   const [stockItem, setStockItem] = useState(null); 
   const [asignacionData, setAsignacionData] = useState({ usuario: '', motivo: '', fecha: new Date().toISOString().split('T')[0] });
 
-  // Import
+  // Importación
   const [modoImportar, setModoImportar] = useState(false);
   const [archivoData, setArchivoData] = useState([]);
   const [headersExcel, setHeadersExcel] = useState([]);
   const [mapeo, setMapeo] = useState({});
   const [procesando, setProcesando] = useState(false);
+  
+  // Importación Inteligente
+  const [importAnalysis, setImportAnalysis] = useState(null);
+  const [showImportModal, setShowImportModal] = useState(false);
 
   useEffect(() => { cargarDatos(); }, []);
 
   const cargarDatos = async () => {
+    const token = localStorage.getItem('token');
+    const config = { headers: { 'x-auth-token': token } };
+
     try {
       const [resA, resT, resU] = await Promise.all([
-        axios.get('https://itsoft-backend.onrender.com/api/assets'),
-        axios.get('https://itsoft-backend.onrender.com/api/asset-types'),
-        axios.get('https://itsoft-backend.onrender.com/api/users')
+        axios.get(`${API_URL}/assets`, config),
+        axios.get(`${API_URL}/asset-types`, config),
+        axios.get(`${API_URL}/users`, config)
       ]);
       setActivos(resA.data || []);
       setTiposActivos(resT.data || []);
       setUsuarios(resU.data || []);
 
-      // 1. Detección de navegación desde Dashboard (Tipo + Reglas)
+      // Detección de navegación desde Dashboard
       if (location.state?.preSelectedTypeId) {
           const tipoEncontrado = resT.data.find(t => t._id === location.state.preSelectedTypeId);
           if (tipoEncontrado) {
               setSelectedType(tipoEncontrado);
               setViewMode('list');
               
-              // Si vienen reglas personalizadas, las aplicamos
               if (location.state.customRules) {
                   setExternalRules(location.state.customRules);
               }
-              
-              // Limpiamos historial
               window.history.replaceState({}, document.title);
           }
       }
 
-    } catch (e) { console.error("Error cargando datos:", e); } 
+    } catch (e) { 
+        console.error("Error cargando datos:", e); 
+        if(e.response?.status === 401) navigate('/login');
+    } 
     finally { setLoading(false); } 
   };
 
-  // --- LÓGICA DE FILTRADO AVANZADO (Copia adaptada del Dashboard) ---
   const obtenerValor = (activo, campoKey) => {
       if (campoKey === 'usuario') return activo.usuarioAsignado ? `${activo.usuarioAsignado.nombre} ${activo.usuarioAsignado.apellido}` : '';
       if (campoKey.startsWith('dt_')) {
@@ -217,6 +228,7 @@ const Assets = () => {
   const handleStockAssignment = async () => {
     if (!stockItem) return alert("Debes seleccionar un modelo.");
     if (!asignacionData.usuario) return alert("Selecciona un usuario.");
+    const token = localStorage.getItem('token');
     
     try {
       const nuevoActivoUsuario = {
@@ -232,14 +244,14 @@ const Assets = () => {
             'Fecha Asignación': asignacionData.fecha
         }
       };
-      await axios.post('https://itsoft-backend.onrender.com/api/assets', nuevoActivoUsuario);
+      await axios.post(`${API_URL}/assets`, nuevoActivoUsuario, { headers: { 'x-auth-token': token } });
 
       const stockActual = parseInt(stockItem.detallesTecnicos['Stock'] || 0);
       const nuevoStock = Math.max(0, stockActual - 1);
       
-      await axios.put(`https://itsoft-backend.onrender.com/api/assets/${stockItem._id}`, {
+      await axios.put(`${API_URL}/assets/${stockItem._id}`, {
           detallesTecnicos: { ...stockItem.detallesTecnicos, 'Stock': nuevoStock }
-      });
+      }, { headers: { 'x-auth-token': token } });
 
       setMostrarAsignacionStock(false);
       cargarDatos();
@@ -252,27 +264,20 @@ const Assets = () => {
     return activos.filter(a => {
         const esDelTipo = String(a.tipo?._id || a.tipo) === String(selectedType._id);
         const tieneStock = selectedType.campos.some(c => c.nombreEtiqueta === 'Stock');
-        
-        // Si hay reglas externas (filtros avanzados), NO ocultamos items asignados
-        // para que el usuario pueda ver "qué usuario tiene X cosa"
         if (tieneStock && externalRules.length === 0) return esDelTipo && !a.usuarioAsignado;
-        
         return esDelTipo;
     });
   }, [activos, selectedType, externalRules]);
 
   const activosFiltrados = useMemo(() => {
     return baseAssets.filter(a => {
-      // 1. Filtro Reglas Externas (Dashboard)
       if (!cumpleReglasExternas(a)) return false;
 
-      // 2. Filtro Busqueda Global
       const nombreUsuario = a.usuarioAsignado ? `${a.usuarioAsignado.nombre} ${a.usuarioAsignado.apellido}` : 'Sin Asignar';
       const content = `${a.marca || ''} ${a.modelo || ''} ${a.serialNumber || ''} ${nombreUsuario} ${JSON.stringify(a.detallesTecnicos || {})}`;
       
       if (busquedaGlobal && !normalizarTexto(content).includes(normalizarTexto(busquedaGlobal))) return false;
 
-      // 3. Filtros Dropdown
       for (const colKey in activeFilters) {
         const filters = activeFilters[colKey];
         if (filters.length === 0) return false;
@@ -304,9 +309,20 @@ const Assets = () => {
     }
   };
 
+  // --- NAVEGACIÓN ---
   const handleBackToDashboard = () => {
-    if (mostrarFormulario) setMostrarFormulario(false);
-    else { setViewMode('dashboard'); setSelectedType(null); setModoImportar(false); setSeleccionados([]); setExternalRules([]); }
+    if (mostrarFormulario) {
+        setMostrarFormulario(false);
+    } else if (location.state?.fromDashboard) {
+        navigate('/');
+    } else {
+        setViewMode('dashboard'); 
+        setSelectedType(null); 
+        setModoImportar(false); 
+        setSeleccionados([]); 
+        setExternalRules([]);
+        window.history.replaceState({}, document.title);
+    }
   };
 
   const getIcon = (name) => {
@@ -342,6 +358,8 @@ const Assets = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    const token = localStorage.getItem('token');
+    
     let serialFinal = datosFormulario['Serial Number'];
     if (!serialFinal || serialFinal.trim() === '') serialFinal = 'STK-' + Date.now().toString().slice(-8); 
 
@@ -362,8 +380,8 @@ const Assets = () => {
     };
 
     try {
-      if (modoEdicion) await axios.put(`https://itsoft-backend.onrender.com/api/assets/${idEdicion}`, body);
-      else await axios.post('https://itsoft-backend.onrender.com/api/assets', body);
+      if (modoEdicion) await axios.put(`${API_URL}/assets/${idEdicion}`, body, { headers: { 'x-auth-token': token } });
+      else await axios.post(`${API_URL}/assets`, body, { headers: { 'x-auth-token': token } });
       setMostrarFormulario(false); cargarDatos();
     } catch (e) { alert("Error al guardar: " + (e.response?.data?.message || e.message)); }
   };
@@ -382,6 +400,7 @@ const Assets = () => {
     XLSX.writeFile(wb, `Inv_${selectedType?.nombre}.xlsx`);
   };
 
+  // --- LÓGICA IMPORTACIÓN ---
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -389,8 +408,9 @@ const Assets = () => {
     setHeadersExcel(rows[0]); setArchivoData(rows.slice(1)); setModoImportar(true);
   };
 
-  const finalizarImportacion = async () => {
+  const analizarImportacion = async () => {
     setProcesando(true);
+    // 1. Mapear datos localmente
     const data = archivoData.map(row => {
       let obj = {};
       Object.keys(mapeo).forEach(idx => {
@@ -400,10 +420,56 @@ const Assets = () => {
       });
       return obj;
     });
+
+    // 2. Enviar a backend para análisis (duplicados/merge)
     try {
-      await axios.post('https://itsoft-backend.onrender.com/api/assets/bulk-import', { tipoId: selectedType._id, activos: data });
-      setModoImportar(false); cargarDatos();
-    } catch (e) { alert("Error importación"); } finally { setProcesando(false); }
+      const token = localStorage.getItem('token');
+      const res = await axios.post(
+          `${API_URL}/assets/analyze-import`, 
+          { datos: data, tipoActivoId: selectedType._id },
+          { headers: { 'x-auth-token': token } }
+      );
+      
+      setImportAnalysis(res.data);
+      setModoImportar(false); // Ocultamos la tabla de mapeo
+      setShowImportModal(true); // Mostramos el modal de decisión
+      
+    } catch (e) { 
+        alert("Error analizando importación: " + (e.response?.data?.message || e.message)); 
+    } finally { setProcesando(false); }
+  };
+
+  const handleExecuteImport = async (strategy) => {
+    if (!importAnalysis) return;
+    setProcesando(true);
+    
+    try {
+        const token = localStorage.getItem('token');
+        const res = await axios.post(
+            `${API_URL}/assets/execute-import`,
+            { 
+                nuevos: importAnalysis.nuevos,
+                conflictos: importAnalysis.conflictos,
+                tipoActivoId: selectedType._id,
+                mergeStrategy: strategy 
+            },
+            { headers: { 'x-auth-token': token } }
+        );
+
+        setShowImportModal(false);
+        setImportAnalysis(null);
+        cargarDatos(); // Recargar grilla
+        
+        // Mensaje final
+        const msg = `Importación finalizada.\nCreados: ${res.data.resumen.creados}\nActualizados: ${res.data.resumen.actualizados}`;
+        alert(msg);
+
+    } catch (error) {
+        console.error(error);
+        alert("Error al ejecutar la importación.");
+    } finally {
+        setProcesando(false);
+    }
   };
 
   const FilterDropdown = ({ colKey }) => {
@@ -443,7 +509,6 @@ const Assets = () => {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             
-            {/* BOTÓN DE BAJAS */}
             <div onClick={() => navigate('/bajas')} className="bg-red-900/40 p-6 rounded-xl border border-red-800 hover:bg-red-900/60 cursor-pointer shadow-lg group transition-all hover:-translate-y-2 active:scale-95">
               <div className="flex justify-between mb-4"><div className="p-3 bg-red-500 text-white rounded-lg transition-transform group-hover:scale-110"><AlertCircle size={24}/></div></div>
               <h3 className="font-bold text-lg text-white">Historial de Bajas</h3>
@@ -516,6 +581,16 @@ const Assets = () => {
                         <option value="">-- Seleccionar --</option>
                         {c.opciones?.map(op => <option key={op} value={op}>{op}</option>)}
                       </select>
+                     ) : c.tipoDato === 'checkbox' ? (
+                         <div className="flex items-center gap-3 bg-slate-900 border border-slate-700 p-3 rounded h-[46px] cursor-pointer hover:bg-slate-800" onClick={() => handleInputChange(c, !(getFieldValue(c) === true || getFieldValue(c) === 'true'))}>
+                            <input 
+                                type="checkbox"
+                                className="w-5 h-5 accent-blue-600 cursor-pointer"
+                                checked={getFieldValue(c) === true || getFieldValue(c) === 'true'} 
+                                onChange={e => handleInputChange(c, e.target.checked)}
+                            />
+                            <span className="text-sm text-white font-medium select-none">{getFieldValue(c) ? 'Sí / Activado' : 'No / Desactivado'}</span>
+                         </div>
                      ) : <input 
                             className="w-full bg-slate-900 border border-slate-700 p-3 rounded text-white text-sm outline-none focus:border-blue-500 transition-all" 
                             type={c.tipoDato === 'number' || c.nombreEtiqueta === 'Stock' ? 'number' : c.tipoDato === 'date' ? 'date' : 'text'} 
@@ -582,7 +657,9 @@ const Assets = () => {
                   </th>))}</tr></thead>
                 </table>
               </div>
-              <button onClick={finalizarImportacion} disabled={procesando} className="w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded font-bold transition-all shadow-md active:scale-95">Confirmar e Importar {archivoData.length} registros</button>
+              <button onClick={analizarImportacion} disabled={procesando} className="w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded font-bold transition-all shadow-md active:scale-95">
+                {procesando ? 'Analizando...' : `Analizar Importación (${archivoData.length} registros)`}
+              </button>
             </div>
           )}
 
@@ -611,11 +688,27 @@ const Assets = () => {
 
                         if (c.nombreEtiqueta === 'Estado') return (
                           <td key={idx} className="p-4">
-                            <select value={a.estado} onChange={e => axios.put(`https://itsoft-backend.onrender.com/api/assets/${a._id}`, { estado: e.target.value }).then(cargarDatos)} className={`bg-transparent border rounded px-1 text-[10px] font-bold outline-none cursor-pointer transition-all ${a.estado === 'Disponible' ? 'text-green-400 border-green-500/20 hover:bg-green-500/10' : 'text-yellow-400 border-yellow-500/20 hover:bg-yellow-500/10'}`}>
+                            <select value={a.estado} onChange={e => {
+                                const token = localStorage.getItem('token');
+                                axios.put(`${API_URL}/assets/${a._id}`, { estado: e.target.value }, { headers: { 'x-auth-token': token } }).then(cargarDatos)
+                            }} className={`bg-transparent border rounded px-1 text-[10px] font-bold outline-none cursor-pointer transition-all ${a.estado === 'Disponible' ? 'text-green-400 border-green-500/20 hover:bg-green-500/10' : 'text-yellow-400 border-yellow-500/20 hover:bg-yellow-500/10'}`}>
                               <option value="Disponible">Disponible</option><option value="Asignado">Asignado</option><option value="Reparación">Reparación</option><option value="Baja">Baja</option>
                             </select>
                           </td>
                         );
+
+                        // --- RENDERIZADO DE CHECKBOX (NUEVO) ---
+                        if (c.tipoDato === 'checkbox') {
+                           return (
+                              <td key={idx} className="p-4">
+                                  {display === 'true' || display === true ? 
+                                      <CheckSquare size={18} className="text-green-500"/> : 
+                                      <Square size={18} className="text-slate-600"/>
+                                  }
+                              </td>
+                           );
+                        }
+
                         return <td key={idx} className="p-4 text-xs group-hover:text-white transition-colors">{display}</td>;
                       })}
                       <td className="p-4 text-right flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-all">
@@ -625,7 +718,12 @@ const Assets = () => {
                             </button>
                         )}
                         <button onClick={() => prepararEdicion(a)} className="text-blue-400 p-1 hover:bg-slate-700 rounded-md transition-all hover:scale-110"><Pencil size={16}/></button>
-                        <button onClick={() => { if(window.confirm('¿Borrar activo?')) axios.delete(`https://itsoft-backend.onrender.com/api/assets/${a._id}`).then(cargarDatos); }} className="text-red-400 p-1 hover:bg-slate-700 rounded-md transition-all hover:scale-110"><Trash2 size={16}/></button>
+                        <button onClick={() => { 
+                            if(window.confirm('¿Borrar activo?')) {
+                                const token = localStorage.getItem('token');
+                                axios.delete(`${API_URL}/assets/${a._id}`, { headers: { 'x-auth-token': token } }).then(cargarDatos); 
+                            }
+                        }} className="text-red-400 p-1 hover:bg-slate-700 rounded-md transition-all hover:scale-110"><Trash2 size={16}/></button>
                       </td>
                     </tr>
                   ))
@@ -635,6 +733,15 @@ const Assets = () => {
           </div>
         </div>
       )}
+      
+      {/* COMPONENTE MODAL DE IMPORTACIÓN */}
+      <ImportModal 
+          isOpen={showImportModal}
+          onClose={() => setShowImportModal(false)}
+          analysis={importAnalysis}
+          onConfirm={handleExecuteImport}
+          loading={procesando}
+      />
     </div>
   );
 };
