@@ -8,10 +8,11 @@ import Assets from './pages/Assets';
 import Login from './pages/Login';
 import Users from './pages/Users'; 
 import UserAssignments from './pages/UserAssignments';
-import WriteOffs from './pages/WritesOffs';
 import Logs from './pages/Logs';
-import QuickAdd from './pages/QuickAdd'; // <--- 1. IMPORTANTE: Agregar esta importación
+import QuickAdd from './pages/QuickAdd';
+import Decommissioned from './pages/Decommissioned'; // <--- Importamos la nueva página
 
+// Componente para proteger rutas (si no hay token, manda a login)
 const PrivateRoute = ({ children }) => {
   const token = localStorage.getItem('token');
   return token ? children : <Navigate to="/login" replace />;
@@ -36,10 +37,9 @@ function App() {
         <Route path="/login" element={<Login />} />
 
         {/* --- RUTA DE ESCANEO RÁPIDO (SIN SIDEBAR) --- */}
-        {/* Esta ruta va "suelta" porque en el celular se ve mejor sin el menú lateral */}
         <Route path="/quick-add" element={
             <PrivateRoute>
-                <QuickAdd /> {/* <--- 2. AQUÍ ESTÁ LA NUEVA RUTA */}
+                <QuickAdd />
             </PrivateRoute>
         } />
 
@@ -48,10 +48,13 @@ function App() {
         <Route path="/activos" element={<PrivateRoute><Layout><Assets /></Layout></PrivateRoute>} />
         <Route path="/usuarios" element={<PrivateRoute><Layout><Users /></Layout></PrivateRoute>} />
         <Route path="/settings" element={<PrivateRoute><Layout><Settings /></Layout></PrivateRoute>} />
-        <Route path="/bajas" element={<PrivateRoute><Layout><WriteOffs /></Layout></PrivateRoute>} />
+        
+        {/* AQUÍ ESTABA EL ERROR: Cambiamos WriteOffs por Decommissioned */}
+        <Route path="/bajas" element={<PrivateRoute><Layout><Decommissioned /></Layout></PrivateRoute>} />
+        
         <Route path="/asignaciones" element={<PrivateRoute><Layout><UserAssignments /></Layout></PrivateRoute>} />
         <Route path="/logs" element={<PrivateRoute><Layout><Logs /></Layout></PrivateRoute>} />
-
+        
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </BrowserRouter>

@@ -17,20 +17,33 @@ const Settings = () => {
   const [loading, setLoading] = useState(false);
   const [mensaje, setMensaje] = useState(null);
 
-  // --- ESTADO USUARIO ---
-  const [userData, setUserData] = useState({
-    nombre: '', apellido: '', email: '', cargo: '', area: '', rol: '', avatar: null, password: ''
+  // --- ESTADO USUARIO (CORREGIDO: Inicialización perezosa) ---
+  const [userData, setUserData] = useState(() => {
+    const savedUser = localStorage.getItem('user');
+    if (savedUser) {
+        try {
+            const parsed = JSON.parse(savedUser);
+            return { ...parsed, password: '' };
+        } catch (e) {
+            console.error("Error leyendo usuario local", e);
+        }
+    }
+    return { nombre: '', apellido: '', email: '', cargo: '', area: '', rol: '', avatar: null, password: '' };
   });
+
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'dark');
 
   // --- ESTADO INVENTARIO (TIPOS DE ACTIVOS) ---
   const [tipos, setTipos] = useState([]);
-  const [tipoSeleccionado, setTipoSeleccionado] = useState(null); // El tipo que estamos editando
-  const [campos, setCampos] = useState([]); // Los campos de ese tipo
+  const [tipoSeleccionado, setTipoSeleccionado] = useState(null); 
+  const [campos, setCampos] = useState([]); 
   
   // Formulario para campos
   const [campoTemp, setCampoTemp] = useState({ nombreEtiqueta: '', tipoDato: 'text', opciones: '' });
-  const [indiceEdicionCampo, setIndiceEdicionCampo] = useState(null); // null = nuevo, numero = editando
+  const [indiceEdicionCampo, setIndiceEdicionCampo] = useState(null);
+  
+  // --- NUEVO ESTADO: NOMBRE PARA NUEVO TIPO ---
+  const [nuevoTipo, setNuevoTipo] = useState('');
 
   useEffect(() => {
     cargarDatos();
@@ -46,32 +59,31 @@ const Settings = () => {
 
   const cargarDatos = async () => {
     const token = localStorage.getItem('token');
-    const storedUser = localStorage.getItem('user') ? JSON.parse(localStorage.getItem('user')) : null;
+    const storedUserStr = localStorage.getItem('user');
     
     if (!token) return;
 
     try {
         const config = { headers: { 'x-auth-token': token } };
         
-        // 1. Cargar Usuario
-        if (storedUser) {
+        if (storedUserStr) {
+            const storedUser = JSON.parse(storedUserStr);
             const userId = storedUser.id || storedUser._id;
             try {
                 const resUser = await axios.get(`${API_URL}/users/${userId}`, config);
                 setUserData(prev => ({ ...prev, ...resUser.data, password: '' }));
+                localStorage.setItem('user', JSON.stringify(resUser.data));
+                window.dispatchEvent(new Event('storage')); 
             } catch (errUser) {
                 console.warn("No se pudo cargar usuario actualizado", errUser);
             }
         }
 
-        // 2. Cargar Tipos de Activos
         const resTipos = await axios.get(`${API_URL}/asset-types`, config);
-        console.log("Tipos cargados:", resTipos.data); // DEBUG
         setTipos(Array.isArray(resTipos.data) ? resTipos.data : []);
 
     } catch (e) { 
         console.error("Error general cargando datos:", e);
-        mostrarMensaje('error', 'Error de conexión con el servidor.');
     }
   };
 
@@ -89,26 +101,53 @@ const Settings = () => {
   const guardarPerfil = async () => {
     setLoading(true);
     const token = localStorage.getItem('token');
-    const storedUser = JSON.parse(localStorage.getItem('user'));
-    const userId = storedUser?.id || storedUser?._id;
+    const userId = userData._id || userData.id;
 
     try {
         const payload = { ...userData };
         if (!payload.password) delete payload.password;
+        
         const res = await axios.put(`${API_URL}/users/${userId}`, payload, { headers: { 'x-auth-token': token } });
+        
         setUserData(prev => ({ ...prev, ...res.data, password: '' }));
         localStorage.setItem('user', JSON.stringify(res.data));
         window.dispatchEvent(new Event('storage'));
         mostrarMensaje('success', 'Perfil actualizado.');
-    } catch (e) { mostrarMensaje('error', 'Error al guardar.'); }
-    finally { setLoading(false); }
+    } catch (e) { 
+        console.error(e);
+        mostrarMensaje('error', 'Error al guardar.'); 
+    } finally { 
+        setLoading(false); 
+    }
   };
 
   // --- FUNCIONES DE GESTIÓN DE CAMPOS ---
   
+  // --- NUEVA FUNCIÓN: CREAR TIPO ---
+  const crearNuevoTipo = async () => {
+      if (!nuevoTipo.trim()) return alert("Escribe un nombre para el nuevo tipo");
+      setLoading(true);
+      const token = localStorage.getItem('token');
+      try {
+          await axios.post(`${API_URL}/asset-types`, {
+              nombre: nuevoTipo,
+              campos: [] // Se crea vacío por defecto
+          }, { headers: { 'x-auth-token': token } });
+          
+          setNuevoTipo(''); // Limpiar input
+          mostrarMensaje('success', 'Tipo creado correctamente.');
+          cargarDatos(); // Recargar lista
+      } catch (e) {
+          console.error(e);
+          mostrarMensaje('error', 'Error al crear tipo.');
+      } finally {
+          setLoading(false);
+      }
+  };
+  // --------------------------------
+
   const seleccionarTipo = (tipo) => {
       setTipoSeleccionado(tipo);
-      // Clonamos los campos para no mutar directo. Aseguramos que sea array.
       setCampos(Array.isArray(tipo.campos) ? [...tipo.campos] : []); 
       setCampoTemp({ nombreEtiqueta: '', tipoDato: 'text', opciones: '' });
       setIndiceEdicionCampo(null);
@@ -126,19 +165,18 @@ const Settings = () => {
       const nuevosCampos = [...campos];
       const campoFormateado = {
           ...campoTemp,
-          // Si es dropdown, convertimos opciones a array
           opciones: campoTemp.tipoDato === 'dropdown' ? String(campoTemp.opciones).split(',').map(s=>s.trim()) : []
       };
 
       if (indiceEdicionCampo !== null) {
-          nuevosCampos[indiceEdicionCampo] = campoFormateado; // Editar
+          nuevosCampos[indiceEdicionCampo] = campoFormateado;
           setIndiceEdicionCampo(null);
       } else {
-          nuevosCampos.push(campoFormateado); // Crear
+          nuevosCampos.push(campoFormateado);
       }
 
       setCampos(nuevosCampos);
-      setCampoTemp({ nombreEtiqueta: '', tipoDato: 'text', opciones: '' }); // Limpiar form
+      setCampoTemp({ nombreEtiqueta: '', tipoDato: 'text', opciones: '' });
   };
 
   const editarCampo = (index) => {
@@ -189,6 +227,21 @@ const Settings = () => {
           mostrarMensaje('error', 'Error al guardar estructura.');
       } finally {
           setLoading(false);
+      }
+  };
+
+  // --- NUEVA FUNCIÓN: ELIMINAR TIPO DE ACTIVO ---
+  const eliminarTipoActivo = async (e, id) => {
+      e.stopPropagation(); // Evitar que se abra la edición al hacer click en borrar
+      if(!window.confirm('¿Estás seguro de eliminar este tipo de activo? Se perderá su configuración.')) return;
+      
+      const token = localStorage.getItem('token');
+      try {
+          await axios.delete(`${API_URL}/asset-types/${id}`, { headers: { 'x-auth-token': token } });
+          mostrarMensaje('success', 'Tipo eliminado.');
+          cargarDatos();
+      } catch (e) {
+          mostrarMensaje('error', 'No se puede eliminar (quizás tiene activos asociados).');
       }
   };
 
@@ -251,25 +304,53 @@ const Settings = () => {
                 </div>
             )}
 
-            {/* --- TAB INVENTARIO (CORREGIDO) --- */}
+            {/* --- TAB INVENTARIO --- */}
             {activeTab === 'inventory' && (
                 <div className="animate-fade-in">
                     {!tipoSeleccionado ? (
                         <>
                             <h2 className="text-xl font-bold mb-6 pb-2 border-b border-gray-200 dark:border-slate-700 flex justify-between">
                                 <span>Tipos de Activos</span>
-                                <span className="text-xs font-normal text-slate-400 mt-1 block">Selecciona uno para editar su estructura</span>
+                                <span className="text-xs font-normal text-slate-400 mt-1 block">Crea o edita tipos (ej: Laptop, Licencia)</span>
                             </h2>
                             
+                            {/* --- SECCIÓN AGREGAR NUEVO TIPO (AQUÍ ESTÁ LO QUE PEDISTE) --- */}
+                            <div className="mb-8 flex gap-3 p-4 bg-slate-50 dark:bg-slate-900/50 rounded-xl border border-dashed border-slate-300 dark:border-slate-700">
+                                <input 
+                                    className="flex-1 bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-600 p-3 rounded-lg outline-none focus:border-blue-500 transition-all text-sm"
+                                    placeholder="Nombre del nuevo tipo (ej: Proyector)"
+                                    value={nuevoTipo}
+                                    onChange={e => setNuevoTipo(e.target.value)}
+                                />
+                                <button 
+                                    onClick={crearNuevoTipo} 
+                                    disabled={loading}
+                                    className="bg-blue-600 hover:bg-blue-500 text-white px-6 rounded-lg font-bold shadow-md flex items-center gap-2 active:scale-95 transition-all"
+                                >
+                                    {loading ? '...' : <><Plus size={20}/> Crear</>}
+                                </button>
+                            </div>
+                            {/* ------------------------------------------------------------- */}
+
                             {tipos.length === 0 ? (
-                                <div className="text-center py-10 bg-gray-50 dark:bg-slate-900 rounded-xl border border-dashed border-gray-300 dark:border-slate-700">
+                                <div className="text-center py-10">
                                     <AlertCircle className="mx-auto text-slate-400 mb-2" size={32}/>
                                     <p className="text-slate-500">No hay tipos de activos creados.</p>
                                 </div>
                             ) : (
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                     {tipos.map(t => (
-                                        <div key={t._id} onClick={() => seleccionarTipo(t)} className="p-6 bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl cursor-pointer hover:border-blue-500 transition-all hover:shadow-lg group">
+                                        <div key={t._id} onClick={() => seleccionarTipo(t)} className="relative p-6 bg-gray-50 dark:bg-slate-900 border border-gray-200 dark:border-slate-700 rounded-xl cursor-pointer hover:border-blue-500 transition-all hover:shadow-lg group">
+                                            
+                                            {/* Botón eliminar tipo */}
+                                            <button 
+                                                onClick={(e) => eliminarTipoActivo(e, t._id)}
+                                                className="absolute top-2 right-2 p-2 text-slate-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-all z-10"
+                                                title="Eliminar Tipo"
+                                            >
+                                                <Trash2 size={16}/>
+                                            </button>
+
                                             <div className="flex justify-between items-center">
                                                 <h3 className="font-bold text-lg text-slate-800 dark:text-white">{t.nombre}</h3>
                                                 <Edit2 size={18} className="text-slate-400 group-hover:text-blue-500"/>
